@@ -136,11 +136,7 @@ class ConcatDataset(torch.utils.data.ConcatDataset):
             sample_idx = idx
         else:
             sample_idx = idx - self.cumulative_sizes[dataset_idx - 1]
-        try:
-            sample, target, idx = self.datasets[dataset_idx][sample_idx][0], self.datasets[dataset_idx][sample_idx][1], idx
-        except IndexError as e:
-            raise IndexError(f'Index {idx} out of range') from e
-        return sample, target, idx
+        return self.datasets[dataset_idx][sample_idx][0], self.datasets[dataset_idx][sample_idx][1], idx
     
     def __deepcopy__(self, memo):
         return ConcatDataset(copy.deepcopy(self.datasets), copy.deepcopy(self.transform))
@@ -218,10 +214,7 @@ class ImageDataset(DatasetFolder):
         Returns:
             tuple: (sample, target) where target is class_index of the target class.
         """
-        try:
-            path, target = self.samples[index]
-        except IndexError as e:
-            raise IndexError(f'Index {index} out of range') from e
+        path, target = self.samples[index]
         sample = self.loader(path)
 
         if self.transform is not None:
