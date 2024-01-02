@@ -1,0 +1,16 @@
+ResNet50: 
+  lr: 7.4e-05
+  batch_size: 4
+  gamma: 0.99
+  weight_decay: 1.3e-05
+VGG16:
+  lr: 5.0e-05
+  batch_size: 32
+  gamma: 0.89
+  weight_decay: 2.0e-04
+DenseNet121:
+  lr: 8.4e-05
+  batch_size: 32
+  gamma: 0.97
+  weight_decay: 6.0e-04
+

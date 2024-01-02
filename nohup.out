@@ -1,0 +1,42 @@
+/home/admin/miniconda3/envs/physical_backdoor/lib/python3.10/site-packages/torchvision/datapoints/__init__.py:12: UserWarning: The torchvision.datapoints and torchvision.transforms.v2 namespaces are still Beta. While we do not expect major breaking changes, some APIs may still change according to user feedback. Please submit any feedback you may have in this issue: https://github.com/pytorch/vision/issues/6753, and you can also check out https://github.com/pytorch/vision/issues/7319 to learn more about the APIs that we suspect might involve future changes. You can silence this warning by calling torchvision.disable_beta_transforms_warning().
+  warnings.warn(_BETA_TRANSFORMS_WARNING)
+/home/admin/miniconda3/envs/physical_backdoor/lib/python3.10/site-packages/torchvision/transforms/v2/__init__.py:54: UserWarning: The torchvision.datapoints and torchvision.transforms.v2 namespaces are still Beta. While we do not expect major breaking changes, some APIs may still change according to user feedback. Please submit any feedback you may have in this issue: https://github.com/pytorch/vision/issues/6753, and you can also check out https://github.com/pytorch/vision/issues/7319 to learn more about the APIs that we suspect might involve future changes. You can silence this warning by calling torchvision.disable_beta_transforms_warning().
+  warnings.warn(_BETA_TRANSFORMS_WARNING)
+torch.Size([1, 8])
+hello
+Currently evaluating -------------------------------:
+Wednesday, 13. December 2023 07:11PM
+Namespace(f=None, net=['ResNet50'], data_path='datasets', dataset='Facial_recognition(original)', recipe='gradient-matching', threatmodel='clean-single-source', num_source_classes=1, scenario='finetuning', poisonkey='3-1', seed=12345, deterministic=False, name='', poison_path='poisons/', model_savepath='./models/', mixing_method=None, mixing_disable_correction=True, mixing_strength=None, disable_adaptive_attack=True, defend_features_only=False, gradient_noise=None, gradient_clip=None, defense_type=None, defense_strength=None, defense_steps=None, defense_sources=None, filter_defense='', padversarial=None, pmix=False, attackoptim='signAdam', attackiter=350, init='randn', tau=0.1, scheduling=True, source_criterion='cross-entropy', restarts=3, pbatch=16, pshuffle=True, paugment=True, data_aug='default', full_data=True, ensemble=1, stagger=None, clean_grad=False, step=False, max_epoch=40, ablation=1.0, loss='similarity', centreg=0, normreg=0, repel=0, vruns=1, vnet=None, retrain_from_init=False, skip_clean_training=False, optimization='conservative-sgd', epochs=None, batch_size=32, lr=None, noaugment=False, lmdb_path=None, cache_dataset=False, dryrun=False, save=None, backdoor_poisoning=True, keep_sources=True, sources_train_rate=1.0, sources_selection_rate=1.0, sources_test_rate=1.0, source_gradient_batch=None, val_max_epoch=30, retrain_max_epoch=30, retrain_scenario='from-scratch', load_feature_repr=True, trigger='real_beard', digital_trigger=False, digital_trigger_path='digital_triggers', retrain_iter=100, source_selection_strategy=None, poison_selection_strategy='max_gradient', raw_poison_rate=1.0, eps=16, alpha=0.1, beta=0.1, output='outputs/3-1_finetuning_real_beard_0.1_0.1.txt')
+CPUs: 4, GPUs: 1 on slurmnode8.
+GPU : NVIDIA GeForce RTX 3090
+Normalization disabled.
+Traceback (most recent call last):
+  File "/vinserver_user/21thinh.dd/FedBackdoor/source/main.py", line 44, in <module>
+    stats_clean = model.train(data, max_epoch=args.max_epoch)
+  File "/vinserver_user/21thinh.dd/FedBackdoor/source/forest/victims/victim_base.py", line 97, in train
+    stats_clean = self._iterate(kettle, poison_delta=None, max_epoch=max_epoch) # Validate poison
+  File "/vinserver_user/21thinh.dd/FedBackdoor/source/forest/victims/victim_single.py", line 109, in _iterate
+    run_step(kettle, poison_delta, self.epoch, stats, *single_setup)
+  File "/vinserver_user/21thinh.dd/FedBackdoor/source/forest/victims/training.py", line 133, in run_step
+    predictions, valid_loss = run_validation(model, loss_fn, valid_loader,
+  File "/vinserver_user/21thinh.dd/FedBackdoor/source/forest/victims/training.py", line 165, in run_validation
+    outputs = model(inputs)
+  File "/home/admin/miniconda3/envs/physical_backdoor/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1501, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/vinserver_user/21thinh.dd/FedBackdoor/source/forest/victims/models.py", line 155, in forward
+    x = self.layer3(x)
+  File "/home/admin/miniconda3/envs/physical_backdoor/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1501, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/admin/miniconda3/envs/physical_backdoor/lib/python3.10/site-packages/torch/nn/modules/container.py", line 217, in forward
+    input = module(input)
+  File "/home/admin/miniconda3/envs/physical_backdoor/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1501, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/vinserver_user/21thinh.dd/FedBackdoor/source/forest/victims/models.py", line 83, in forward
+    out = self.conv1(x)
+  File "/home/admin/miniconda3/envs/physical_backdoor/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1501, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/admin/miniconda3/envs/physical_backdoor/lib/python3.10/site-packages/torch/nn/modules/conv.py", line 463, in forward
+    return self._conv_forward(input, self.weight, self.bias)
+  File "/home/admin/miniconda3/envs/physical_backdoor/lib/python3.10/site-packages/torch/nn/modules/conv.py", line 459, in _conv_forward
+    return F.conv2d(input, weight, bias, self.stride,
+KeyboardInterrupt
