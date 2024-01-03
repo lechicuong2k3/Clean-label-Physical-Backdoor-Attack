@@ -55,9 +55,7 @@ if __name__ == "__main__":
         poison_delta = witch.brew(model, data)
     else:
         poison_delta = None
-    
-    print(poison_delta.shape)
-    
+        
     craft_time = time.time()
     # Optional: apply a filtering defense
     if args.filter_defense != '' and args.recipe != 'naive':
@@ -67,10 +65,9 @@ if __name__ == "__main__":
         defense = get_defense(args)
         clean_ids = defense(data, model, poison_delta)
         poison_ids = set(range(len(data.trainset))) - set(clean_ids)
-        print(len(clean_ids))
         removed_images = len(data.trainset) - len(clean_ids)
         removed_poisons = len(set(data.poison_target_ids.tolist()) & poison_ids)
-        
+
         data.reset_trainset(clean_ids)
         write(f'Filtered {removed_images} images out of {len(data.trainset)}. {removed_poisons} were poisons.', args.output)
         filter_stats = dict(removed_poisons=removed_poisons, removed_images_total=removed_images)
@@ -80,33 +77,33 @@ if __name__ == "__main__":
     if args.retrain_from_init:
         model.retrain(data, poison_delta) # Evaluate poison performance on the retrained model
 
-    # write('Validating poisoned model...', args.output)
-    # # Validation
-    # if args.vnet is not None:  # Validate the transfer model given by args.vnet
-    #     train_net = args.net
-    #     args.net = args.vnet
-    #     args.ensemble = len(args.vnet)
-    #     if args.vruns > 0:
-    #         model = forest.Victim(args, setup=setup)  # this instantiates a new model with a different architecture
-    #         model.validate(data, poison_delta, val_max_epoch=args.val_max_epoch)
-    #     args.net = train_net
-    # else:  # Validate the main model
-    #     if args.vruns > 0:
-    #         model.validate(data, poison_delta, val_max_epoch=args.val_max_epoch)
+    write('Validating poisoned model...', args.output)
+    # Validation
+    if args.vnet is not None:  # Validate the transfer model given by args.vnet
+        train_net = args.net
+        args.net = args.vnet
+        args.ensemble = len(args.vnet)
+        if args.vruns > 0:
+            model = forest.Victim(args, setup=setup)  # this instantiates a new model with a different architecture
+            model.validate(data, poison_delta, val_max_epoch=args.val_max_epoch)
+        args.net = train_net
+    else:  # Validate the main model
+        if args.vruns > 0:
+            model.validate(data, poison_delta, val_max_epoch=args.val_max_epoch)
             
-    # test_time = time.time()
+    test_time = time.time()
 
-    # timestamps = dict(train_time=str(datetime.timedelta(seconds=train_time - start_time)).replace(',', ''),
-    #                   craft_time=str(datetime.timedelta(seconds=craft_time - train_time)).replace(',', ''),
-    #                   test_time=str(datetime.timedelta(seconds=test_time - craft_time)).replace(',', ''))
+    timestamps = dict(train_time=str(datetime.timedelta(seconds=train_time - start_time)).replace(',', ''),
+                      craft_time=str(datetime.timedelta(seconds=craft_time - train_time)).replace(',', ''),
+                      test_time=str(datetime.timedelta(seconds=test_time - craft_time)).replace(',', ''))
 
-    # # Export
-    # if args.save is not None and args.recipe != 'naive':
-    #     data.export_poison(poison_delta, path=args.poison_path, mode=args.save)
+    # Export
+    if args.save is not None and args.recipe != 'naive':
+        data.export_poison(poison_delta, path=args.poison_path, mode=args.save)
 
-    # write('\n' + datetime.datetime.now().strftime("%A, %d. %B %Y %I:%M%p"), args.output)
-    # write('---------------------------------------------------', args.output)
-    # write(f'Finished computations with train time: {str(datetime.timedelta(seconds=train_time - start_time))}', args.output)
-    # write(f'Finished computations with craft time: {str(datetime.timedelta(seconds=craft_time - train_time))}', args.output)
-    # write(f'Finished computations with test time: {str(datetime.timedelta(seconds=test_time - craft_time))}', args.output)
-    # write('-------------------Job finished.-------------------', args.output)
+    write('\n' + datetime.datetime.now().strftime("%A, %d. %B %Y %I:%M%p"), args.output)
+    write('---------------------------------------------------', args.output)
+    write(f'Finished computations with train time: {str(datetime.timedelta(seconds=train_time - start_time))}', args.output)
+    write(f'Finished computations with craft time: {str(datetime.timedelta(seconds=craft_time - train_time))}', args.output)
+    write(f'Finished computations with test time: {str(datetime.timedelta(seconds=test_time - craft_time))}', args.output)
+    write('-------------------Job finished.-------------------', args.output)
