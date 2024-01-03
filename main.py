@@ -30,6 +30,7 @@ if args.deterministic:
 if __name__ == "__main__":
     
     setup = forest.utils.system_startup(args) # Set up device and torch data type
+    torch.cuda.empty_cache()
     
     model = forest.Victim(args, num_classes=NUM_CLASSES, setup=setup) # Initialize model and loss_fn
     data = forest.Kettle(args, model.defs.batch_size, model.defs.augmentations,

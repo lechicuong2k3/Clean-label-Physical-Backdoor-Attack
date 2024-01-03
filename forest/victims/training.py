@@ -89,7 +89,7 @@ def run_step(kettle, poison_delta, epoch, model, defs, optimizer, scheduler, los
                     predictions = torch.argmax(outputs.data, dim=1)
                     correct_preds = (predictions == labels).sum().item()
                     return loss, correct_preds
-            
+
             outputs = model(inputs)
             loss, preds = criterion(outputs, labels)
             

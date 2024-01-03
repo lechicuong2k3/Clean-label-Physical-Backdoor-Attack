@@ -326,3 +326,5 @@ def test_vgg_16(num_classes=10):
     tensor = torch.randn(1, 3, 224, 224)
     out1 = feature(tensor)
     out2 = feature_model(tensor)
+
+test_vgg_16()

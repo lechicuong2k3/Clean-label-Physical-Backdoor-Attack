@@ -42,7 +42,7 @@ class _VictimSingle(_VictimBase):
         self.epoch = 1
 
         self.model.to(**self.setup)
-        if torch.cuda.device_count() > 1:
+        if self.setup['device'] == 'cpu' and torch.cuda.device_count() > 1:
             self.model = torch.nn.DataParallel(self.model)
             self.model.frozen = self.model.module.frozen
         write(f'{self.args.net[0]} model initialized with random key {self.model_init_seed}.', self.args.output)
@@ -68,7 +68,7 @@ class _VictimSingle(_VictimBase):
             self.model = torch.nn.Sequential(*list(self.model.children())[:-1], torch.nn.Flatten(), list(replacement_model.children())[-1])
             self.model.frozen = frozen
             self.model.to(**self.setup)
-            if torch.cuda.device_count() > 1:
+            if self.setup['device'] == 'cpu'and torch.cuda.device_count() > 1:
                 self.model = torch.nn.DataParallel(self.model)
                 self.model.frozen = self.model.module.frozen
 
@@ -118,7 +118,7 @@ class _VictimSingle(_VictimBase):
             write('Model reset to epoch 0.', self.args.output)
             self._initialize_model(self.args.net[0], mode=self.args.scenario)
             self.model.to(**self.setup)
-            if torch.cuda.device_count() > 1:
+            if self.setup['device'] == 'cpu' and torch.cuda.device_count() > 1:
                 self.model = torch.nn.DataParallel(self.model)
                 self.model.frozen = self.model.module.frozen
 
