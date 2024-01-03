@@ -13,8 +13,11 @@ from .witch_base import _Witch
 
 FINETUNING_LR_DROP = 0.001
 
-
-class WitchHTBD(_Witch):
+class WitchCLP1(_Witch):
+    '''Finetune the trained model on triggerset of source class and target class so that the model can learn the 
+    discriminative features of both classes. Then use HTBA to shift the feature representations of poisoned samples (target samples
+    with trigger) closer to the feature representations of source samples with trigger.
+    '''
     def backdoor_finetuning(self, victim, kettle):
         '''Finetuning the clean_model on backdoor dataset containing triggered samples from source class and target class'''
         source_classes = kettle.poison_setup['source_class']
@@ -22,8 +25,13 @@ class WitchHTBD(_Witch):
         for source_class in source_classes:
             backdoor_idcs.extend(kettle.triggered_trainset_dist[source_class])
         
-        self.backdoored_model = copy.deepcopy(victim.model)
+        backdoor_idcs.extend(kettle.triggered_trainset_dist[kettle.poison_setup['target_class']])
+
+        self.backdoored_model = copy.deepcopy(victim.model)        
         self.backdoor_dataset = datasets.Subset(self.trigger_trainset, backdoor_idcs)
+        
+        
+        
     
     def _run_trial(self, victim, kettle):
         """Run a single trial."""
