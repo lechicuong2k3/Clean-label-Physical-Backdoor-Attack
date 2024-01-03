@@ -559,10 +559,6 @@ class Kettle():
         for source_class in self.poison_setup['source_class']:
             triggerset_source_idcs.extend(self.triggerset_dist[source_class])
         
-        # Create triggerset of the target class
-        triggerset_target_idcs = self.triggerset_dist[self.poison_setup['poison_class']]
-        self.target_triggerset = Subset(self.triggerset, triggerset_target_idcs, transform=train_transform)
-        
         trigger_trainset_idcs = random.sample(triggerset_source_idcs, int(self.args.sources_train_rate * len(triggerset_source_idcs)))
         
         self.source_trainset = Subset(self.triggerset, trigger_trainset_idcs, transform=train_transform)
