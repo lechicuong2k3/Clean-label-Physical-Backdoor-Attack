@@ -272,7 +272,7 @@ def check_suspicion(model, suspicionset, fpset, target_class, setup):
             totals += labels.shape[0]
             false_preds += (predicted == target_class).sum().item()
     
-    suspicion_rate = false_preds.float() / totals
+    suspicion_rate = false_preds / totals
     
     totals, false_preds = 0, 0
     with torch.no_grad():
@@ -284,7 +284,7 @@ def check_suspicion(model, suspicionset, fpset, target_class, setup):
             totals += labels.shape[0]
             false_preds += (predicted == target_class).sum().item()
 
-    false_positive_rate = false_preds.float() / totals
+    false_positive_rate = false_preds / totals
     return suspicion_rate, false_positive_rate
         
 def _split_data(inputs, labels, source_selection='sep-half'):

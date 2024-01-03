@@ -1,7 +1,5 @@
 datasets
-old_verson
 __pycache__
-__init__.py
 pretrained
 *.ipynb
 idea_1
