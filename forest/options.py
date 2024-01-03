@@ -104,7 +104,7 @@ def options():
     # Optimization setup
     parser.add_argument('--optimization', default='conservative-adam', type=str, help='Optimization Strategy')
     # Strategy overrides:
-    parser.add_argument('--epochs', default=1, type=int, help='Override default epochs of --optimization strategy')
+    parser.add_argument('--epochs', default=40, type=int, help='Override default epochs of --optimization strategy')
     parser.add_argument('--batch_size', default=64, type=int, help='Override default batch_size of --optimization strategy')
     parser.add_argument('--lr', default=None, type=float, help='Override default learning rate of --optimization strategy')
     parser.add_argument('--noaugment', action='store_true', help='Do not use data augmentation during training.')
