@@ -217,11 +217,12 @@ class _Witch():
 
             source_losses = source_losses / (batch + 1)
             if step % 10 == 0 or step == (self.args.attackiter - 1):
-                adv_acc, adv_loss, clean_acc, clean_loss = check_sources(victim.model, victim.loss_fn, kettle.source_testset, kettle.poison_setup['target_class'], victim.setup)
                 lr = att_optimizer.param_groups[0]['lr']
+                write(f'Iteration {step} | Poisoning learning rate: {lr} | Passenger loss: {source_losses:2.4f}', self.args.output)
+                
+            if step % 100 == 0 or step == (self.args.attackiter - 1):
+                adv_acc, adv_loss, clean_acc, clean_loss = check_sources(victim.model, victim.loss_fn, kettle.source_testset, kettle.poison_setup['target_class'], victim.setup)
                 write(f'\n---------------- Evaluation ---------------- ', self.args.output)
-                write(f'Poisoning learning rate: {lr}', self.args.output)
-                write(f'Iteration {step}: Passenger loss is {source_losses:2.4f}', self.args.output)
                 for source_class in kettle.poison_setup['source_class']:
                     if source_class != 'avg':
                         write(f'Source class {source_class}:', self.args.output)

@@ -14,7 +14,7 @@ def options():
     ###########################################################################
     parser.add_argument('--f')
     # Central:
-    parser.add_argument('--net', default='VGG16', type=lambda s: [str(item) for item in s.split(',')])
+    parser.add_argument('--net', default='Resnet50', type=lambda s: [str(item) for item in s.split(',')])
     parser.add_argument('--dataset', default='datasets/Facial_recognition', type=str, choices=['Facial_recognition', 'Object_detection'])
     parser.add_argument('--recipe', default='gradient-matching', type=str, choices=['gradient-matching', 'gradient-matching-private', 
                                                                                     'hidden-trigger', 'hidden-trigger-mt' 'gradient-matching-mt',
@@ -71,7 +71,7 @@ def options():
     parser.add_argument('--source_criterion', default='cross-entropy', type=str, help='Loss criterion for poison loss')
     parser.add_argument('--restarts', default=1, type=int, help='How often to restart the attack.')
     
-    parser.add_argument('--pbatch', default=64, type=int, help='Poison batch size during optimization')
+    parser.add_argument('--pbatch', default=32, type=int, help='Poison batch size during optimization')
     parser.add_argument('--paugment', action='store_false', help='Do not augment poison batch during optimization')
     parser.add_argument('--data_aug', type=str, default='default', help='Mode of diff. data augmentation.')
 
@@ -81,7 +81,7 @@ def options():
     parser.add_argument('--stagger', default=None, type=str, help='Stagger the network ensemble if it exists', choices=['firstn', 'full', 'inbetween'])
     parser.add_argument('--clean_grad', action='store_true', help='Compute the first-order poison gradient.')
     parser.add_argument('--step', action='store_true', help='Optimize the model for one epoch.')
-    parser.add_argument('--max_epoch', default=40, type=int, help='Train only up to this epoch before poisoning.')
+    parser.add_argument('--max_epoch', default=20, type=int, help='Train only up to this epoch before poisoning.')
 
     # Use only a subset of the dataset:
     parser.add_argument('--ablation', default=1.0, type=float, help='What percent of data (including poisons) to use for validation')
@@ -119,10 +119,10 @@ def options():
     # Backdoor attack:
     parser.add_argument('--keep_sources', action='store_true', default=True, help='Do we keep the sources are used for testing attack success rate?')
     parser.add_argument('--sources_train_rate', default=1.0, type=float, help='Fraction of source_class trainset that can be selected crafting poisons')
-    parser.add_argument('--sources_selection_rate', default=0.5, type=int, help='Fraction of sources to be selected for crafting poisons')
-    parser.add_argument('--source_gradient_batch', default=64, type=int, help='Batch size for sources train gradient computing')
-    parser.add_argument('--val_max_epoch', default=40, type=int, help='Train only up to this epoch for final validation.')
-    parser.add_argument('--retrain_max_epoch', default=30, type=int, help='Train only up to this epoch for retraining during crafting.')
+    parser.add_argument('--sources_selection_rate', default=1.0, type=int, help='Fraction of sources to be selected for crafting poisons')
+    parser.add_argument('--source_gradient_batch', default=None, type=int, help='Batch size for sources train gradient computing')
+    parser.add_argument('--val_max_epoch', default=20, type=int, help='Train only up to this epoch for final validation.')
+    parser.add_argument('--retrain_max_epoch', default=10, type=int, help='Train only up to this epoch for retraining during crafting.')
     parser.add_argument('--retrain_scenario', default='from-scratch', type=str, choices=['from-scratch', 'finetuning', 'transfer'], help='Scenario for retraining and evaluating on the poisoned dataset')
     parser.add_argument('--load_feature_repr', default=True, action='store_true', help='Load feature representation of the model trained on clean data')
     parser.add_argument('--trigger', default='real_beard', type=str, help='Trigger type')

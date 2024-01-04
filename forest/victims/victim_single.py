@@ -162,7 +162,7 @@ class _VictimSingle(_VictimBase):
             write('{} sources with maximum gradients selected'.format(source_poison_selected), self.args.output)
 
         # Using batch processing for gradients
-        if self.args.source_gradient_batch != None or self.args.source_gradient_batch < images.shape[0]:
+        if self.args.source_gradient_batch != None:
             batch_size = self.args.source_gradient_batch
             if images.shape[0] < batch_size:
                 batch_size = images.shape[0]
