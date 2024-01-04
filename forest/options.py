@@ -10,7 +10,7 @@ def options():
     """
     parser = argparse.ArgumentParser(description='Construct poisoned training data for the given network and dataset')
 
-
+    
     ###########################################################################
     parser.add_argument('--f')
     # Central:
@@ -71,14 +71,14 @@ def options():
     parser.add_argument('--source_criterion', default='cross-entropy', type=str, help='Loss criterion for poison loss')
     parser.add_argument('--restarts', default=1, type=int, help='How often to restart the attack.')
     
-    parser.add_argument('--pbatch', default=32, type=int, help='Poison batch size during optimization')
+    parser.add_argument('--pbatch', default=64, type=int, help='Poison batch size during optimization')
     parser.add_argument('--paugment', action='store_false', help='Do not augment poison batch during optimization')
     parser.add_argument('--data_aug', type=str, default='default', help='Mode of diff. data augmentation.')
 
     # Poisoning algorithm changes
     parser.add_argument('--full_data', action='store_true', help='Use full train data for poisoning (instead of just the poison images)')
     parser.add_argument('--ensemble', default=1, type=int, help='Ensemble of networks to brew the poison on')
-    parser.add_argument('--stagger', default=None, type=str, help='Stagger the network ensemble if it exists', choices=['firstn', 'full', 'inbetween'])
+    parser.add_argument('--stagger', action='store_true', help='Stagger the network ensemble if it exists')
     parser.add_argument('--clean_grad', action='store_true', help='Compute the first-order poison gradient.')
     parser.add_argument('--step', action='store_true', help='Optimize the model for one epoch.')
     parser.add_argument('--max_epoch', default=20, type=int, help='Train only up to this epoch before poisoning.')
@@ -105,7 +105,7 @@ def options():
     parser.add_argument('--optimization', default='conservative-adam', type=str, help='Optimization Strategy')
     # Strategy overrides:
     parser.add_argument('--epochs', default=10, type=int, help='Override default epochs of --optimization strategy')
-    parser.add_argument('--batch_size', default=64, type=int, help='Override default batch_size of --optimization strategy')
+    parser.add_argument('--batch_size', default=128, type=int, help='Override default batch_size of --optimization strategy')
     parser.add_argument('--lr', default=None, type=float, help='Override default learning rate of --optimization strategy')
     parser.add_argument('--noaugment', action='store_true', help='Do not use data augmentation during training.')
 
@@ -114,7 +114,11 @@ def options():
 
     # Debugging:
     parser.add_argument('--dryrun', action='store_true', help='This command runs every loop only a single time.')
-    parser.add_argument('--save', default=None, help='Export poisons into a given format. Options are full/limited/automl/numpy.')
+    parser.add_argument('--save', default=None, help='Export poisons into a given format. Options are full/limited/numpy.')
+    
+    # Distributed Computations
+    parser.add_argument("--local_rank", default=None, type=int, help='Distributed rank. This is an INTERNAL ARGUMENT! '
+                                                                     'Only the launch utility should set this argument!')
 
     # Backdoor attack:
     parser.add_argument('--keep_sources', action='store_true', default=True, help='Do we keep the sources are used for testing attack success rate?')

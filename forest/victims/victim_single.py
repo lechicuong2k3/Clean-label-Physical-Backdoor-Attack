@@ -1,20 +1,18 @@
 """Single model default victim class."""
-
-from numpy.lib.type_check import imag
 import torch
 import numpy as np
 import warnings
 from math import ceil
 
-from collections import defaultdict
 import copy
 
 from .models import get_model
 from .training import get_optimizers, run_step
 from ..hyperparameters import training_strategy
 from ..utils import set_random_seed, write
-from ..consts import BENCHMARK
+from ..consts import BENCHMARK, SHARING_STRATEGY
 torch.backends.cudnn.benchmark = BENCHMARK
+torch.multiprocessing.set_sharing_strategy(SHARING_STRATEGY)
 
 from .victim_base import _VictimBase
 
@@ -38,7 +36,7 @@ class _VictimSingle(_VictimBase):
             self.model_init_seed = self.args.model_seed
             
         set_random_seed(self.model_init_seed)
-        self._initialize_model(self.args.net[0], mode=self.args.scenario)
+        self.model, self.defs, self.optimizer, self.scheduler = self._initialize_model(self.args.net[0], mode=self.args.scenario)
         self.epoch = 1
 
         self.model.to(**self.setup)
@@ -46,7 +44,9 @@ class _VictimSingle(_VictimBase):
             self.model = torch.nn.DataParallel(self.model)
             self.model.frozen = self.model.module.frozen
         write(f'{self.args.net[0]} model initialized with random key {self.model_init_seed}.', self.args.output)
+        print(f'{self.args.net[0]} model initialized with random key {self.model_init_seed}.')
         write(repr(self.defs), self.args.output)
+        print(repr(self.defs))
 
     def reinitialize_last_layer(self, reduce_lr_factor=1.0, seed=None, keep_last_layer=False):
         if not keep_last_layer:
@@ -114,7 +114,7 @@ class _VictimSingle(_VictimBase):
         run_step(kettle, poison_delta, self.epoch, *single_setup)
         self.epoch += 1
         if self.epoch > self.defs.epochs + 1:
-            self.epoch = 0
+            self.epoch = 1
             write('Model reset to epoch 0.', self.args.output)
             self._initialize_model(self.args.net[0], mode=self.args.scenario)
             self.model.to(**self.setup)

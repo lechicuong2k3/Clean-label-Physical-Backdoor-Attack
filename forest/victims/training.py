@@ -12,7 +12,7 @@ from ..consts import NON_BLOCKING, BENCHMARK
 from ..utils import write
 torch.backends.cudnn.benchmark = BENCHMARK
 
-def run_step(kettle, poison_delta, epoch, model, defs, optimizer, scheduler, loss_fn=nn.CrossEntropyLoss(reduction='mean')):
+def run_step(kettle, poison_delta, epoch, model, defs, optimizer, scheduler, loss_fn=nn.CrossEntropyLoss(reduction='mean'), rank=None):
 
     epoch_loss, total_preds, correct_preds = 0, 0, 0
 
@@ -21,7 +21,10 @@ def run_step(kettle, poison_delta, epoch, model, defs, optimizer, scheduler, los
         train_loader = kettle.partialloader
     else:
         train_loader = kettle.trainloader
+    
     valid_loader = kettle.validloader
+    fp_loader = kettle.fploader
+    suspicion_loader = kettle.suspicionloader
 
     if defs.novel_defense != None and defs.novel_defense['type'] == 'adversarial-evasion':
         attacker = construct_attack(defs.novel_defense, model, loss_fn, kettle.dm, kettle.ds,
@@ -144,7 +147,7 @@ def run_step(kettle, poison_delta, epoch, model, defs, optimizer, scheduler, los
             model, loss_fn, kettle.source_testset, kettle.poison_setup['poison_class'],
             kettle.setup)
         
-        suspicion_rate, false_positive_rate = check_suspicion(model, kettle.suspicionset, kettle.fpset, kettle.poison_setup['target_class'], kettle.setup)
+        suspicion_rate, false_positive_rate = check_suspicion(model, suspicion_loader, fp_loader, kettle.poison_setup['target_class'], kettle.setup)
     elif epoch % defs.validate == 0:
         predictions = run_validation(model, loss_fn, valid_loader,
                                                  kettle.poison_setup['poison_class'],
@@ -160,7 +163,8 @@ def run_step(kettle, poison_delta, epoch, model, defs, optimizer, scheduler, los
         source_poison_acc, source_poison_loss, source_clean_acc, source_clean_loss = None, None, None, None
 
     current_lr = optimizer.param_groups[0]['lr']
-    print_and_save_stats(epoch, current_lr, epoch_loss / (batch + 1), correct_preds / total_preds, predictions, source_poison_acc, source_poison_loss, source_clean_acc, source_clean_loss, suspicion_rate, false_positive_rate, kettle.args.output)
+    if rank == 0 or rank == None:
+        print_and_save_stats(epoch, current_lr, epoch_loss / (batch + 1), correct_preds / total_preds, predictions, source_poison_acc, source_poison_loss, source_clean_acc, source_clean_loss, suspicion_rate, false_positive_rate, kettle.args.output)
 
 
 def run_validation(model, criterion, dataloader, target_class, source_class, setup, dryrun=False):
@@ -256,11 +260,9 @@ def check_sources(model, criterion, source_testsets, target_class, setup):
         
     return poison_accs, poison_losses, clean_accs, clean_losses
 
-def check_suspicion(model, suspicionset, fpset, target_class, setup):
+def check_suspicion(model, suspicion_loader, fp_loader, target_class, setup):
     """Compute suspicion rate and false positive rate."""
     model.eval()
-    suspicion_loader = torch.utils.data.DataLoader(suspicionset, batch_size=128, shuffle=False, num_workers=3)
-    fp_loader = torch.utils.data.DataLoader(fpset, batch_size=128, shuffle=False, num_workers=3)
     
     totals, false_preds = 0, 0
     with torch.no_grad():

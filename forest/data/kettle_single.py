@@ -5,6 +5,8 @@ import numpy as np
 from math import ceil
 import pickle
 from PIL import Image
+import torchvision
+torchvision.disable_beta_transforms_warning()
 from torchvision.transforms import v2
 
 import datetime
@@ -26,7 +28,7 @@ from ..utils import cw_loss
 import copy
 
 
-class Kettle():
+class KettleSingle():
     """Brew poison with given arguments.
 
     Data class.
@@ -67,12 +69,13 @@ class Kettle():
             self.init_seed = np.random.randint(0, 2**32 - 1)
         else:
             self.init_seed = int(self.args.poison_seed)
+        print(f'Initializing Poison data with random seed {self.init_seed.item()}')
         set_random_seed(self.init_seed)
 
         if self.args.cache_dataset:
             self.trainset = CachedDataset(self.trainset, num_workers=self.num_workers)
             self.validset = CachedDataset(self.validset, num_workers=self.num_workers)
-            num_workers = 0
+            self.num_workers = 0
 
         self.construction() # Create self.poisonset, self.source_testset, self.validset, self.poison_setup
             
@@ -522,8 +525,11 @@ class Kettle():
         suspicionset_1 = Subset(self.triggerset, false_target_idcs)
         suspicionset_2 = Subset(suspicionset, false_trigger_idcs)
         
-        self.suspicionset = ConcatDataset([suspicionset_1, suspicionset_2], transform=test_transform) # Overwrite suspicionset
-        self.fpset = Subset(suspicionset, false_positive_idcs, transform=test_transform)
+        suspicionset = ConcatDataset([suspicionset_1, suspicionset_2], transform=test_transform) # Overwrite suspicionset
+        fpset = Subset(suspicionset, false_positive_idcs, transform=test_transform)
+        
+        self.suspicionloader = torch.utils.data.DataLoader(suspicionset, batch_size=128, shuffle=False, num_workers=self.num_workers)
+        self.fploader = torch.utils.data.DataLoader(fpset, batch_size=128, shuffle=False, num_workers=self.num_workers)
         
     def setup_poisons(self):
         """

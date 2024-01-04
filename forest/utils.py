@@ -21,8 +21,6 @@ def system_startup(args=None, defs=None):
     print(datetime.datetime.now().strftime("%A, %d. %B %Y %I:%M%p"))
     if args is not None:
         print(args)
-    if defs is not None:
-        print(repr(defs))
     print(f'CPUs: {torch.get_num_threads()}, GPUs: {torch.cuda.device_count()} on {socket.gethostname()}.')
 
     if torch.cuda.is_available():
@@ -63,7 +61,7 @@ def bypass_last_layer(model):
 
     Patch this function if problems appear.
     """
-    if isinstance(model, torch.nn.DataParallel):
+    if isinstance(model, torch.nn.DataParallel) or isinstance(model, torch.nn.parallel.DistributedDataParallel):
         layer_cake = list(model.module.children())
     else:
         layer_cake = list(model.children())

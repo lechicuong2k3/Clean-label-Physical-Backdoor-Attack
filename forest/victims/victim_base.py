@@ -38,17 +38,18 @@ class _VictimBase:
 
     def __init__(self, args, num_classes=10, setup=dict(device=torch.device('cpu'), dtype=torch.float)):
         """Initialize empty victim."""
-        self.args, self.setup = args, setup
+        self.args, self.setup, self.num_classes  = args, setup, num_classes
         if self.args.ensemble < len(self.args.net):
             raise ValueError(f'More models requested than ensemble size.'
                              f'Increase ensemble size or reduce models.')
+        self.rank = None
         self.loss_fn = torch.nn.CrossEntropyLoss()
-        self.num_classes = num_classes
         self.initialize()
 
     def gradient(self, images, labels):
         """Compute the gradient of criterion(model) w.r.t to given data."""
         raise NotImplementedError()
+        return grad, grad_norm
 
     def compute(self, function):
         """Compute function on all models.
@@ -93,12 +94,12 @@ class _VictimBase:
     def train(self, kettle, max_epoch=None):
         """Clean (pre)-training of the chosen model, no poisoning involved."""
             
-        write('Starting clean training with {} scenario ...'.format(self.args.scenario), self.args.output)
+        if self.rank == None or self.rank == 0: write('Starting clean training with {} scenario ...'.format(self.args.scenario), self.args.output)
         self._iterate(kettle, poison_delta=None, max_epoch=max_epoch) # Validate poison
         
         if self.args.load_feature_repr:
             self.save_feature_representation()
-            write('Feature representation saved.', self.args.output)
+            if self.rank == None or self.rank == 0: write('Feature representation saved.', self.args.output)
             
     def retrain(self, kettle, poison_delta, max_epoch=None):
         """Retrain with the same initialization on dataset with poison added."""
@@ -132,14 +133,16 @@ class _VictimBase:
             pretrained = False
         else:
             pretrained = True
-        self.model = get_model(model_name, num_classes=self.num_classes, pretrained=pretrained)
-        self.model.frozen = False
+        model = get_model(model_name, num_classes=self.num_classes, pretrained=pretrained)
+        model.frozen = False
+        
         # Define training routine
-        self.defs = training_strategy(model_name, self.args) # Initialize hyperparameters for training
+        defs = training_strategy(model_name, self.args) # Initialize hyperparameters for training
         if mode == 'finetuning':
-            self.defs.lr *= FINETUNING_LR_DROP
+            defs.lr *= FINETUNING_LR_DROP
         elif mode == 'transfer':
-            self.model.frozen = True
+            model.frozen = True
             self.freeze_feature_extractor()
             self.eval()
-        self.optimizer, self.scheduler = get_optimizers(self.model, self.args, self.defs)
+        optimizer, scheduler = get_optimizers(model, self.args, defs)
+        return model, defs, optimizer, scheduler

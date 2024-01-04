@@ -5,7 +5,8 @@ from forest.data import Kettle
 from forest.victims import Victim
 
 from .options import options
+from .hyperparameters import training_strategy
 
 
 
-__all__ = ['Victim', 'Witch', 'Kettle', 'options']
+__all__ = ['Victim', 'Witch', 'Kettle', 'options' 'training_strategy']

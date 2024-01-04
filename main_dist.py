@@ -5,20 +5,31 @@ import os
 
 import datetime
 import time
+import socket
 
 import forest
 
 from forest.filtering_defenses import get_defense
 from forest.utils import write
-from forest.consts import BENCHMARK, NUM_CLASSES
+from forest.consts import BENCHMARK, NUM_CLASSES, SHARING_STRATEGY
+
 torch.backends.cudnn.benchmark = BENCHMARK
+torch.multiprocessing.set_sharing_strategy(SHARING_STRATEGY)
 
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
-os.environ["CUDA_VISIBLE_DEVICES"]="3"
+os.environ["CUDA_VISIBLE_DEVICES"]="1,0"
 torch.cuda.empty_cache()
+
+if not (torch.cuda.device_count() > 1):
+    raise ValueError('Cannot run distributed on single GPU!')
 
 # Parse input arguments
 args = forest.options().parse_args()
+args.local_rank = int(os.environ['LOCAL_RANK'])
+
+if args.local_rank is None:
+    raise ValueError('This script should only be launched via the pytorch launch utility!')
+
 if ('gradient-matching' not in args.recipe) and ('hidden-trigger' not in args.recipe):
     target = int(args.poisonkey.split('-')[1])
     args.output = f'outputs/{args.recipe}/{args.scenario}/{args.trigger}/{args.net[0]}/{target}_{args.scenario}_{args.trigger}_{args.alpha}_{args.beta}_{args.attackoptim}.txt'   
@@ -33,8 +44,26 @@ if args.deterministic:
 
 if __name__ == "__main__":
     
-    setup = forest.utils.system_startup(args) # Set up device and torch data type
-    torch.cuda.empty_cache()
+    if torch.cuda.device_count() < args.local_rank:
+        raise ValueError('Process invalid, oversubscribing to GPUs is not possible in this mode.')
+    else:
+        torch.cuda.set_device(args.local_rank)
+        device = torch.device(f'cuda:{args.local_rank}')
+    setup = dict(device=device, dtype=torch.float, non_blocking=forest.consts.NON_BLOCKING)
+    torch.distributed.init_process_group(backend=forest.consts.DISTRIBUTED_BACKEND, init_method='env://')
+    os.environ["OMP_NUM_THREADS"]="3"
+    
+    if args.ensemble != 1 and args.ensemble != torch.distributed.get_world_size():
+        raise ValueError('Argument given to ensemble does not match number of launched processes!')
+    else:
+        args.ensemble = torch.distributed.get_world_size()
+        if torch.distributed.get_rank() == 0:
+            print(f'------------------------------- Currently evaluating on {args.recipe} -------------------------------')
+            print(datetime.datetime.now().strftime("%A, %d. %B %Y %I:%M%p"))
+            print(args)
+            print(f'CPUs: {torch.get_num_threads()}, GPUs: {torch.cuda.device_count()} on {socket.gethostname()}')
+            print(f'Ensemble launched on {torch.distributed.get_world_size()} GPUs'
+                  f' with backend {forest.consts.DISTRIBUTED_BACKEND}.')
     
     model = forest.Victim(args, num_classes=NUM_CLASSES, setup=setup) # Initialize model and loss_fn
     data = forest.Kettle(args, model.defs.batch_size, model.defs.augmentations,
@@ -43,9 +72,9 @@ if __name__ == "__main__":
 
     start_time = time.time()
     if args.skip_clean_training:
-        write('Skipping clean training...', args.output)
+        if torch.distributed.get_rank() == 0: write('Skipping clean training...', args.output)
     else:
-        write('Clean training model...', args.output)
+        if torch.distributed.get_rank() == 0: write('Clean training model...', args.output)
         model.train(data, max_epoch=args.max_epoch)
     train_time = time.time()
     
@@ -54,7 +83,8 @@ if __name__ == "__main__":
         data.select_poisons(model, args.poison_selection_strategy)
     
     # Print data status
-    data.print_status()
+    if torch.distributed.get_rank() == 0:
+        data.print_status()
 
     if args.recipe != 'naive':
         poison_delta = witch.brew(model, data)
@@ -98,13 +128,14 @@ if __name__ == "__main__":
             
     test_time = time.time()
 
-    # Export
-    if args.save is not None and args.recipe != 'naive':
-        data.export_poison(poison_delta, path=args.poison_path, mode=args.save)
+    if torch.distributed.get_rank() == 0:
+        # Export
+        if args.save is not None and args.recipe != 'naive':
+            data.export_poison(poison_delta, path=args.poison_path, mode=args.save)
 
-    write('\n' + datetime.datetime.now().strftime("%A, %d. %B %Y %I:%M%p"), args.output)
-    write('---------------------------------------------------', args.output)
-    write(f'Finished computations with train time: {str(datetime.timedelta(seconds=train_time - start_time))}', args.output)
-    write(f'Finished computations with craft time: {str(datetime.timedelta(seconds=craft_time - train_time))}', args.output)
-    write(f'Finished computations with test time: {str(datetime.timedelta(seconds=test_time - craft_time))}', args.output)
-    write('-------------------Job finished.-------------------', args.output)
+        write('\n' + datetime.datetime.now().strftime("%A, %d. %B %Y %I:%M%p"), args.output)
+        write('---------------------------------------------------', args.output)
+        write(f'Finished computations with train time: {str(datetime.timedelta(seconds=train_time - start_time))}', args.output)
+        write(f'Finished computations with craft time: {str(datetime.timedelta(seconds=craft_time - train_time))}', args.output)
+        write(f'Finished computations with test time: {str(datetime.timedelta(seconds=test_time - craft_time))}', args.output)
+        write('-------------------Job finished.-------------------', args.output)

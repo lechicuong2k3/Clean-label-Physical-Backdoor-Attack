@@ -325,6 +325,7 @@ class _Witch():
 
             closure = self._define_objective(inputs, labels, criterion)
             loss, prediction = victim.compute(closure, self.source_grad, self.source_clean_grad, self.source_gnorm)
+            delta_slice = victim.sync_gradients(delta_slice)
 
             if self.args.clean_grad:
                 delta_slice.data = poison_delta[poison_slices].detach().to(**self.setup)
