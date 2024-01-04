@@ -69,7 +69,7 @@ class KettleSingle():
             self.init_seed = np.random.randint(0, 2**32 - 1)
         else:
             self.init_seed = int(self.args.poison_seed)
-        print(f'Initializing Poison data with random seed {self.init_seed.item()}')
+        print(f'Initializing Poison data with random seed {self.init_seed}')
         set_random_seed(self.init_seed)
 
         if self.args.cache_dataset:

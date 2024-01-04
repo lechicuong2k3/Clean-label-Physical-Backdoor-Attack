@@ -133,16 +133,15 @@ class _VictimBase:
             pretrained = False
         else:
             pretrained = True
-        model = get_model(model_name, num_classes=self.num_classes, pretrained=pretrained)
-        model.frozen = False
+        self.model = get_model(model_name, num_classes=self.num_classes, pretrained=pretrained)
+        self.model.frozen = False
         
         # Define training routine
-        defs = training_strategy(model_name, self.args) # Initialize hyperparameters for training
+        self.defs = training_strategy(model_name, self.args) # Initialize hyperparameters for training
         if mode == 'finetuning':
-            defs.lr *= FINETUNING_LR_DROP
+            self.defs.lr *= FINETUNING_LR_DROP
         elif mode == 'transfer':
-            model.frozen = True
+            self.model.frozen = True
             self.freeze_feature_extractor()
             self.eval()
-        optimizer, scheduler = get_optimizers(model, self.args, defs)
-        return model, defs, optimizer, scheduler
+        self.optimizer, self.scheduler = get_optimizers(self.model, self.args, self.defs)

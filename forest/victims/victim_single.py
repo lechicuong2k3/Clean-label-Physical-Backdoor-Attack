@@ -36,7 +36,7 @@ class _VictimSingle(_VictimBase):
             self.model_init_seed = self.args.model_seed
             
         set_random_seed(self.model_init_seed)
-        self.model, self.defs, self.optimizer, self.scheduler = self._initialize_model(self.args.net[0], mode=self.args.scenario)
+        self._initialize_model(self.args.net[0], mode=self.args.scenario)
         self.epoch = 1
 
         self.model.to(**self.setup)
@@ -62,11 +62,16 @@ class _VictimSingle(_VictimBase):
             # We construct a full replacement model, so that the seed matches up with the initial seed,
             # even if all of the model except for the last layer will be immediately discarded.
             replacement_model = get_model(self.args.net[0], pretrained=True)
-
-            # Rebuild model with new last layer
-            frozen = self.model.frozen
-            self.model = torch.nn.Sequential(*list(self.model.children())[:-1], torch.nn.Flatten(), list(replacement_model.children())[-1])
-            self.model.frozen = frozen
+            
+            if isinstance(self.model, torch.nn.DataParallel) or isinstance(self.model, torch.nn.parallel.DistributedDataParallel):
+                frozen = self.model.module.frozen
+                self.model = torch.nn.Sequential(*list(self.model.module.children())[:-1], torch.nn.Flatten(), list(replacement_model.children())[-1])
+            else:
+                # Rebuild model with new last layer
+                frozen = self.model.frozen
+                self.model = torch.nn.Sequential(*list(self.model.children())[:-1], torch.nn.Flatten(), list(replacement_model.children())[-1])
+            
+            self.model.frozen = frozen  
             self.model.to(**self.setup)
             if self.setup['device'] == 'cpu'and torch.cuda.device_count() > 1:
                 self.model = torch.nn.DataParallel(self.model)
@@ -82,12 +87,21 @@ class _VictimSingle(_VictimBase):
 
     def freeze_feature_extractor(self):
         """Freezes all parameters and then unfreeze the last layer."""
-        self.model.frozen = True
-        for param in self.model.parameters():
-            param.requires_grad = False
- 
-        for param in list(self.model.children())[-1].parameters():
-            param.requires_grad = True
+        if isinstance(self.model, torch.nn.DataParallel) or isinstance(self.model, torch.nn.parallel.DistributedDataParallel):
+            self.model.module.frozen = True
+            for param in self.model.module.parameters():
+                param.requires_grad = False
+    
+            for param in list(self.model.module.children())[-1].parameters():
+                param.requires_grad = True
+        
+        else:
+            self.model.frozen = True
+            for param in self.model.parameters():
+                param.requires_grad = False
+    
+            for param in list(self.model.children())[-1].parameters():
+                param.requires_grad = True
 
     def save_feature_representation(self):
         self.clean_model = copy.deepcopy(self.model)

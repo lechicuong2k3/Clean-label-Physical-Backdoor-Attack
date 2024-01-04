@@ -23,18 +23,16 @@ class _VictimDistributed(_VictimSingle):
     def __init__(self, args, num_classes, setup=dict(device=torch.device('cpu'), dtype=torch.float)):
         """Initialize empty victim."""
         self.args, self.num_classes, self.setup = args, num_classes, setup
-        self.loss_fn = torch.nn.CrossEntropyLoss()
-        
+        self.loss_fn = torch.nn.CrossEntropyLoss() 
         self.rank = torch.distributed.get_rank()
-        self.world_size = torch.distributed.get_world_size()
         
         self.epoch = 1
 
-        if self.world_size < len(self.args.net):
+        if self.args.world_size < len(self.args.net):
             raise ValueError(f'More models requested than distr. ensemble size.'
                              f'Launch more instances or reduce models.')
         if self.args.ensemble > 1:
-            if self.args.ensemble != self.world_size:
+            if self.args.ensemble != self.args.world_size:
                 raise ValueError('The ensemble option is disregarded in distributed mode. One model will be launched per instance.')
         self.initialize()
         
@@ -51,7 +49,7 @@ class _VictimDistributed(_VictimSingle):
         set_random_seed(self.model_init_seed)
 
         model_name = self.args.net[self.rank % len(self.args.net)]
-        self.model, self.defs, self.optimizer, self.scheduler = self._initialize_model(model_name)
+        self._initialize_model(model_name)
         self.model.to(**self.setup)
         if self.args.ensemble == 1:
             self.model = torch.nn.parallel.DistributedDataParallel(self.model, device_ids=[self.rank])
@@ -68,9 +66,9 @@ class _VictimDistributed(_VictimSingle):
             max_epoch = self.defs.epochs
 
         if poison_delta is None and self.args.stagger:
-            stagger_list = [int(epoch) for epoch in np.linspace(0, max_epoch, self.world_size)]
+            stagger_list = [int(epoch) for epoch in np.linspace(0, max_epoch, self.args.world_size)]
         else:
-            stagger_list = [max_epoch] * self.world_size
+            stagger_list = [max_epoch] * self.args.world_size
 
         single_setup = (self.model, self.defs, self.optimizer, self.scheduler)
         for self.epoch in range(1, stagger_list[self.rank] + 1):
@@ -112,11 +110,11 @@ class _VictimDistributed(_VictimSingle):
 
         Distributed hmm
         """
-        outputs = function(self.model, self.criterion, *args)
+        outputs = function(self.model, self.optimizer, *args)
         for item in outputs:
             if isinstance(item, torch.Tensor):
                 torch.distributed.all_reduce(item, op=torch.distributed.ReduceOp.SUM)
-                item /= self.world_size
+                item /= self.args.world_size
             else:
                 pass  # how to sync??
                 # send all values to GPU and gather on rank=0 ??

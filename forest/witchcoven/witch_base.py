@@ -82,12 +82,12 @@ class _Witch():
 
     def _brew(self, victim, kettle):
         """Run generalized iterative routine."""
-        write(f'Starting crafting poisons ...', self.args.output)
+        if victim.rank == 0 or  victim.rank == None: write(f'Starting crafting poisons ...', self.args.output)
         self._initialize_brew(victim, kettle)
         poisons, scores = [], torch.ones(self.args.restarts) * 10_000
 
         for trial in range(self.args.restarts):
-            write("Poisoning number {}".format(trial), self.args.output)
+            if victim.rank == 0 or  victim.rank == None:  write("Poisoning number {}".format(trial), self.args.output)
             poison_delta, source_losses = self._run_trial(victim, kettle) # Poisoning
             scores[trial] = source_losses
             poisons.append(poison_delta.detach())
@@ -96,7 +96,7 @@ class _Witch():
 
         optimal_score = torch.argmin(scores)
         self.stat_optimal_loss = scores[optimal_score].item()
-        write(f'Poisons with minimal passenger loss {self.stat_optimal_loss:6.4e} selected.', self.args.output)
+        if victim.rank == 0 or victim.rank == None:  write(f'Poisons with minimal passenger loss {self.stat_optimal_loss:6.4e} selected.', self.args.output)
         poison_delta = poisons[optimal_score]
 
         return poison_delta # Return the best poison perturbation amont the restarts
@@ -126,7 +126,8 @@ class _Witch():
             self.source_grad, self.source_gnorm = victim.gradient(_sources, _target_classes, selection=self.args.source_selection_strategy)
         else:
             raise ValueError('Invalid source criterion chosen ...')
-        write(f'Source Grad Norm is {self.source_gnorm}', self.args.output)
+        if victim.rank == 0 or  victim.rank == None: 
+            write(f'Source Grad Norm is {self.source_gnorm}', self.args.output)
 
         if self.args.repel != 0:
             self.source_clean_grad, _ = victim.gradient(_sources, _true_classes)
@@ -218,18 +219,20 @@ class _Witch():
             source_losses = source_losses / (batch + 1)
             if step % 10 == 0 or step == (self.args.attackiter - 1):
                 lr = att_optimizer.param_groups[0]['lr']
-                write(f'Iteration {step} | Poisoning learning rate: {lr} | Passenger loss: {source_losses:2.4f}', self.args.output)
+                if victim.rank == 0 or victim.rank == None: 
+                    write(f'Iteration {step} | Poisoning learning rate: {lr} | Passenger loss: {source_losses:2.4f}', self.args.output)
                 
             if step % 100 == 0 or step == (self.args.attackiter - 1):
                 adv_acc, adv_loss, clean_acc, clean_loss = check_sources(victim.model, victim.loss_fn, kettle.source_testset, kettle.poison_setup['target_class'], victim.setup)
-                write(f'\n---------------- Evaluation ---------------- ', self.args.output)
-                for source_class in kettle.poison_setup['source_class']:
-                    if source_class != 'avg':
-                        write(f'Source class {source_class}:', self.args.output)
-                    else:
-                        write(f'Average:', self.args.output)
-                    write('Adv.  loss: {:.4f} | Adv.  acc: {:.4f}'.format(adv_loss[source_class], adv_acc[source_class]), self.args.output)
-                    write('Clean loss: {:.4f} | Clean acc: {:.4f}'.format(clean_loss[source_class], clean_acc[source_class]), self.args.output)
+                if victim.rank == 0 or  victim.rank == None: 
+                    write(f'\n---------------- Evaluation ---------------- ', self.args.output)
+                    for source_class in kettle.poison_setup['source_class']:
+                        if source_class != 'avg':
+                            write(f'Source class {source_class}:', self.args.output)
+                        else:
+                            write(f'Average:', self.args.output)
+                        write('Adv.  loss: {:.4f} | Adv.  acc: {:.4f}'.format(adv_loss[source_class], adv_acc[source_class]), self.args.output)
+                        write('Clean loss: {:.4f} | Clean acc: {:.4f}'.format(clean_loss[source_class], clean_acc[source_class]), self.args.output)
 
             # Default not to step 
             if self.args.step:
@@ -243,9 +246,11 @@ class _Witch():
 
             if self.args.retrain_scenario != None:
                 if step % (self.args.retrain_iter) == 0 and step != 0 and step != (self.args.attackiter - 1):
-                    write("\nRetraining at iteration {}".format(step), self.args.output)
+                    if victim.rank == 0 or victim.rank == None: 
+                        write("\nRetraining at iteration {}".format(step), self.args.output)
                     poison_delta.detach()
-                    write(f'Model reinitialized and retrain with {self.args.scenario} scenario', self.args.output)
+                    if victim.rank == 0 or victim.rank == None: 
+                        write(f'Model reinitialized and retrain with {self.args.scenario} scenario', self.args.output)
                     if self.args.retrain_scenario == 'from-scratch':
                         victim.initialize()
                     elif self.args.retrain_scenario in ['transfer', 'finetuning']:
@@ -255,7 +260,8 @@ class _Witch():
                             victim.reinitialize_last_layer(reduce_lr_factor=FINETUNING_LR_DROP, keep_last_layer=True)
 
                     victim._iterate(kettle, poison_delta=poison_delta, max_epoch=self.args.retrain_max_epoch)
-                    write('Retraining done!\n', self.args.output)
+                    if victim.rank == 0 or  victim.rank == None: 
+                        write('Retraining done!\n', self.args.output)
                     self._initialize_brew(victim, kettle)
 
         return poison_delta, source_losses

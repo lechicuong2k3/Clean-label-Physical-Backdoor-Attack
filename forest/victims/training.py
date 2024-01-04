@@ -80,7 +80,7 @@ def run_step(kettle, poison_delta, epoch, model, defs, optimizer, scheduler, los
                     
             # Switch into training mode
 
-            list(model.children())[-1].train() if model.frozen else model.train()        
+            list(model.children())[-1].train() if model.module.frozen else model.train()        
 
             # Change loss function to include corrective terms if mixing with correction
             if activate_defenses and (defs.mixing_method != None and defs.mixing_method['correction']):

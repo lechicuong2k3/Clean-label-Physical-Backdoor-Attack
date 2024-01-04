@@ -22,7 +22,7 @@ def options():
                                                                                     
     parser.add_argument('--threatmodel', default='clean-single-source', type=str, choices=['clean-single-source', 'clean-multi-source', 'clean-all-source', 'third-party', 'self-betrayal'])
     parser.add_argument('--num_source_classes', default=1, type=int, help='Number of source classes (for many-to-one attacks)')
-    parser.add_argument('--scenario', default='finetuning', type=str, choices=['from-scratch', 'transfer', 'finetuning'])
+    parser.add_argument('--scenario', default='transfer', type=str, choices=['from-scratch', 'transfer', 'finetuning'])
 
     # Reproducibility management:
     parser.add_argument('--poisonkey', default='3-1', type=str, help='Initialize poison setup with this key.')  # Take input such as 05-1 for [0, 5] as the sources and 1 as the target
@@ -104,8 +104,8 @@ def options():
     # Optimization setup
     parser.add_argument('--optimization', default='conservative-adam', type=str, help='Optimization Strategy')
     # Strategy overrides:
-    parser.add_argument('--epochs', default=10, type=int, help='Override default epochs of --optimization strategy')
-    parser.add_argument('--batch_size', default=128, type=int, help='Override default batch_size of --optimization strategy')
+    parser.add_argument('--epochs', default=20, type=int, help='Override default epochs of --optimization strategy')
+    parser.add_argument('--batch_size', default=64, type=int, help='Override default batch_size of --optimization strategy')
     parser.add_argument('--lr', default=None, type=float, help='Override default learning rate of --optimization strategy')
     parser.add_argument('--noaugment', action='store_true', help='Do not use data augmentation during training.')
 

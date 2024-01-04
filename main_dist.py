@@ -18,7 +18,7 @@ torch.multiprocessing.set_sharing_strategy(SHARING_STRATEGY)
 
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
 os.environ["CUDA_VISIBLE_DEVICES"]="1,0"
-torch.cuda.empty_cache()
+os.environ["OMP_NUM_THREADS"]="3"
 
 if not (torch.cuda.device_count() > 1):
     raise ValueError('Cannot run distributed on single GPU!')
@@ -51,19 +51,17 @@ if __name__ == "__main__":
         device = torch.device(f'cuda:{args.local_rank}')
     setup = dict(device=device, dtype=torch.float, non_blocking=forest.consts.NON_BLOCKING)
     torch.distributed.init_process_group(backend=forest.consts.DISTRIBUTED_BACKEND, init_method='env://')
-    os.environ["OMP_NUM_THREADS"]="3"
+    args.ensemble = len(args.vnet)
     
     if args.ensemble != 1 and args.ensemble != torch.distributed.get_world_size():
         raise ValueError('Argument given to ensemble does not match number of launched processes!')
     else:
-        args.ensemble = torch.distributed.get_world_size()
+        args.world_size = torch.distributed.get_world_size()
         if torch.distributed.get_rank() == 0:
             print(f'------------------------------- Currently evaluating on {args.recipe} -------------------------------')
             print(datetime.datetime.now().strftime("%A, %d. %B %Y %I:%M%p"))
             print(args)
             print(f'CPUs: {torch.get_num_threads()}, GPUs: {torch.cuda.device_count()} on {socket.gethostname()}')
-            print(f'Ensemble launched on {torch.distributed.get_world_size()} GPUs'
-                  f' with backend {forest.consts.DISTRIBUTED_BACKEND}.')
     
     model = forest.Victim(args, num_classes=NUM_CLASSES, setup=setup) # Initialize model and loss_fn
     data = forest.Kettle(args, model.defs.batch_size, model.defs.augmentations,

@@ -85,13 +85,13 @@ class KettleDistributed():
         
         train_sampler = torch.utils.data.distributed.DistributedSampler(
             self.trainset,
-            num_replicas=self.args.ensemble,
+            num_replicas=self.args.world_size,
             rank=self.args.local_rank,
         )
         
         valid_sampler = torch.utils.data.distributed.DistributedSampler(
             self.validset,
-            num_replicas=self.args.ensemble,
+            num_replicas=self.args.world_size,
             rank=self.args.local_rank,
         )
         
@@ -107,7 +107,7 @@ class KettleDistributed():
             self.partialset = Subset(self.trainset, self.sample)
             partialset_sampler = torch.utils.data.distributed.DistributedSampler(
                 self.partialset,
-                num_replicas=self.args.ensemble,
+                num_replicas=self.args.world_size,
                 rank=self.args.local_rank,
             )
             self.partialloader = torch.utils.data.DataLoader(self.partialset, batch_size=min(self.batch_size, len(self.partialset)),
@@ -359,7 +359,8 @@ class KettleDistributed():
         """Select and initialize poison_target_ids, poisonset, poisonloader, poison_lookup, clean_ids."""
         victim.eval(dropout=True)
 
-        write('\nSelecting poisons ...', self.args.output)
+        if self.rank == 0:
+            write('\nSelecting poisons ...', self.args.output)
 
         if self.args.source_criterion in ['cw', 'carlini-wagner']:
             criterion = cw_loss
@@ -368,7 +369,8 @@ class KettleDistributed():
             
         
         if selection == 'max_gradient':
-            write('Selections strategy is {}'.format(selection), self.args.output)
+            if self.rank == 0:
+                write('Selections strategy is {}'.format(selection), self.args.output)
             images = torch.stack([data[0] for data in self.poisonset], dim=0).to(**self.setup)
             labels = torch.tensor([data[1] for data in self.poisonset]).to(device=self.setup['device'], dtype=torch.long)
             poison_target_ids = torch.tensor([data[2] for data in self.poisonset], dtype=torch.long)
@@ -412,9 +414,9 @@ class KettleDistributed():
         images = images[indices]
         labels = labels[indices]
         poison_target_ids = poison_target_ids[indices]
-        write('{} poisons with maximum gradients selected'.format(len(indices)), self.args.output)
+        if self.rank == 0: write('{} poisons with maximum gradients selected'.format(len(indices)), self.args.output)
 
-        write('Updating Kettle poison related fields ...', self.args.output)
+        if self.rank == 0: write('Updating Kettle poison related fields ...', self.args.output)
         self.poison_target_ids = poison_target_ids
         if isinstance(self.trainset, ConcatDataset):
             self.poisonset = Subset(self.trainset.datasets[0], indices=self.poison_target_ids)
@@ -429,7 +431,7 @@ class KettleDistributed():
         
         poison_sampler = torch.utils.data.distributed.DistributedSampler(
             self.poisonset,
-            num_replicas=self.args.ensemble,
+            num_replicas=self.args.world_size,
             rank=self.args.local_rank,
         )
         self.poisonloader = torch.utils.data.DataLoader(self.poisonset, batch_size=self.poison_batch_size, sampler=poison_sampler,
@@ -564,12 +566,12 @@ class KettleDistributed():
         
         suspicion_sampler = torch.utils.data.distributed.DistributedSampler(
             suspicionset,
-            num_replicas=self.args.ensemble,
+            num_replicas=self.args.world_size,
             rank=self.args.local_rank,
         )
         fpset_sampler = torch.utils.data.distributed.DistributedSampler(
             fpset,
-            num_replicas=self.args.ensemble,
+            num_replicas=self.args.world_size,
             rank=self.args.local_rank,
         )
         self.suspicionloader = torch.utils.data.DataLoader(suspicionset, batch_size=self.batch_size * 2, sampler=suspicion_sampler,
@@ -643,7 +645,7 @@ class KettleDistributed():
             
             train_sampler = torch.utils.data.distributed.DistributedSampler(
                 self.trainset,
-                num_replicas=self.args.ensemble,
+                num_replicas=self.args.world_size,
                 rank=self.args.local_rank,
             )
 
