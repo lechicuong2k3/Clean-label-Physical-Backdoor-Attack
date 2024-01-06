@@ -64,7 +64,7 @@ def options():
 
     # Poison brewing:
     parser.add_argument('--attackoptim', default='signAdam', type=str)
-    parser.add_argument('--attackiter', default=250, type=int)
+    parser.add_argument('--attackiter', default=500, type=int)
     parser.add_argument('--init', default='randn', type=str)  # randn / rand
     parser.add_argument('--tau', default=0.1, type=float)
     parser.add_argument('--scheduling', action='store_false', help='Disable step size decay.')
@@ -133,7 +133,7 @@ def options():
     parser.add_argument('--digital_trigger', action='store_true', default=False, help='Adding digital trigger instead of physical ones')
     parser.add_argument('--digital_trigger_path', default='digital_triggers')
     parser.add_argument('--opacity', default=32/255, type=float, help='The opacity of digital trigger')
-    parser.add_argument('--retrain_iter', default=100, type=int, help='Start retraining every <retrain_iter> iterations')
+    parser.add_argument('--retrain_iter', default=150, type=int, help='Start retraining every <retrain_iter> iterations')
     parser.add_argument('--source_selection_strategy', default=None, type=str, choices=['max_gradient', 'max_loss'], help='sources_train_rate selection strategy')
     parser.add_argument('--poison_selection_strategy', default="max_gradient", type=str, choices=['max_gradient', 'max_loss'], help='Poison selection strategy')
     parser.add_argument('--raw_poison_rate', default=1.0, type=float, help='Fraction of target_class dataset that CAN BE SELECTED as poisons')
