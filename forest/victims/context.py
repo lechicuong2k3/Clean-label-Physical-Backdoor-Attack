@@ -8,7 +8,7 @@ class GPUContext():
         """Init with setup info."""
         self.setup = setup
         self.model = model.to(**self.setup)
-        if torch.cuda.device_count() > 1:
+        if torch.device != 'cpu' and torch.cuda.device_count() > 1:
             self.model = torch.nn.DataParallel(self.model)
             self.model.frozen = self.model.module.frozen
 

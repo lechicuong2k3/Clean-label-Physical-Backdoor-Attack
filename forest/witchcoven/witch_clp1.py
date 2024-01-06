@@ -4,14 +4,12 @@ import torch
 import torchvision
 from PIL import Image
 from ..utils import bypass_last_layer, cw_loss, write
-from ..consts import BENCHMARK, NON_BLOCKING
+from ..consts import BENCHMARK, NON_BLOCKING, FINETUNING_LR_DROP
 import copy
 from forest.data import datasets
 torch.backends.cudnn.benchmark = BENCHMARK
 import random
 from .witch_base import _Witch
-
-FINETUNING_LR_DROP = 0.001
 
 class WitchCLP1(_Witch):
     '''Finetune the trained model on triggerset of source class and target class so that the model can learn the 

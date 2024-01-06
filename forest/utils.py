@@ -12,7 +12,7 @@ import random
 import numpy as np
 
 from .consts import NON_BLOCKING
-
+os.environ["CUDA_VISIBLE_DEVICES"]="3"
 def system_startup(args=None, defs=None):
     """Decide and print GPU / CPU / hostname info."""
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
@@ -21,8 +21,6 @@ def system_startup(args=None, defs=None):
     print(datetime.datetime.now().strftime("%A, %d. %B %Y %I:%M%p"))
     if args is not None:
         print(args)
-    if defs is not None:
-        print(repr(defs))
     print(f'CPUs: {torch.get_num_threads()}, GPUs: {torch.cuda.device_count()} on {socket.gethostname()}.')
 
     if torch.cuda.is_available():
@@ -63,7 +61,7 @@ def bypass_last_layer(model):
 
     Patch this function if problems appear.
     """
-    if isinstance(model, torch.nn.DataParallel):
+    if isinstance(model, torch.nn.DataParallel) or isinstance(model, torch.nn.parallel.DistributedDataParallel):
         layer_cake = list(model.module.children())
     else:
         layer_cake = list(model.children())
@@ -109,4 +107,17 @@ def set_deterministic():
 def write(content, file):
     with open(file, 'a') as f:
         f.write(content + '\n')
+  
+def global_meters_all_avg(device, *meters):
+    """meters: scalar values of loss/accuracy calculated in each rank"""
+    tensors = []
+    for meter in meters:
+        if isinstance(meter, torch.Tensor):
+            tensors.append(meter)
+        else:
+            tensors.append(torch.tensor(meter, device=device, dtype=torch.float32))
+    for tensor in tensors:
+        # each item of `tensors` is all-reduced starting from index 0 (in-place)
+        torch.distributed.all_reduce(tensor)
 
+    return [(tensor / torch.distributed.get_world_size()).item() for tensor in tensors]
