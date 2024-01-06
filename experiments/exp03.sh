@@ -1,12 +1,11 @@
-# Test naive attack with target 1 and real_beard trigger
-CUDA_VISIBLE_DEVICES=0,1
-python main.py --recipe=naive --poisonkey=0-1 --trigger=real_beard --alpha=0.0 --beta=0.5 
-python main.py --recipe=naive --poisonkey=2-1 --trigger=real_beard --alpha=0.0 --beta=0.5
-wait
-python main.py --recipe=naive --poisonkey=3-1 --trigger=real_beard --alpha=0.0 --beta=0.5
-python main.py --recipe=naive --poisonkey=4-1 --trigger=real_beard --alpha=0.0 --beta=0.5
-wait
-python main.py --recipe=naive --poisonkey=5-1 --trigger=real_beard --alpha=0.0 --beta=0.5
-python main.py --recipe=naive --poisonkey=6-1 --trigger=real_beard --alpha=0.0 --beta=0.5
-wait
-python main.py --recipe=naive --poisonkey=7-1 --trigger=real_beard --alpha=0.0 --beta=0.5
+torchrun --standalone --nnodes=1 --rdzv-endpoint=localhost:29450 --nproc-per-node=3 main_dist.py --trigger=real_beard --recipe=gradient-matching --poisonkey=3-0 --alpha=0.1 --beta=0.0 --scenario=finetuning --train_max_epoch=20 --threatmodel=clean-single-source 
+torchrun --standalone --nnodes=1 --rdzv-endpoint=localhost:29450 --nproc-per-node=3 main_dist.py --trigger=real_beard --recipe=gradient-matching --poisonkey=5-0 --alpha=0.1 --beta=0.0 --scenario=finetuning --train_max_epoch=20 --threatmodel=clean-single-source 
+torchrun --standalone --nnodes=1 --rdzv-endpoint=localhost:29450 --nproc-per-node=3 main_dist.py --trigger=real_beard --recipe=gradient-matching --poisonkey=7-0 --alpha=0.1 --beta=0.0 --scenario=finetuning --train_max_epoch=20 --threatmodel=clean-single-source 
+
+torchrun --standalone --nnodes=1 --rdzv-endpoint=localhost:29450 --nproc-per-node=3 main_dist.py --trigger=real_beard --recipe=gradient-matching --poisonkey=1-3 --alpha=0.1 --beta=0.0 --scenario=finetuning --train_max_epoch=20 --threatmodel=clean-single-source 
+torchrun --standalone --nnodes=1 --rdzv-endpoint=localhost:29450 --nproc-per-node=3 main_dist.py --trigger=real_beard --recipe=gradient-matching --poisonkey=4-3 --alpha=0.1 --beta=0.0 --scenario=finetuning --train_max_epoch=20 --threatmodel=clean-single-source 
+torchrun --standalone --nnodes=1 --rdzv-endpoint=localhost:29450 --nproc-per-node=3 main_dist.py --trigger=real_beard --recipe=gradient-matching --poisonkey=8-3 --alpha=0.1 --beta=0.0 --scenario=finetuning --train_max_epoch=20 --threatmodel=clean-single-source 
+
+torchrun --standalone --nnodes=1 --rdzv-endpoint=localhost:29450 --nproc-per-node=3 main_dist.py --trigger=real_beard --recipe=gradient-matching --poisonkey=0-2 --alpha=0.1 --beta=0.0 --scenario=finetuning --train_max_epoch=20 --threatmodel=clean-single-source 
+torchrun --standalone --nnodes=1 --rdzv-endpoint=localhost:29450 --nproc-per-node=3 main_dist.py --trigger=real_beard --recipe=gradient-matching --poisonkey=6-2 --alpha=0.1 --beta=0.0 --scenario=finetuning --train_max_epoch=20 --threatmodel=clean-single-source 
+torchrun --standalone --nnodes=1 --rdzv-endpoint=localhost:29450 --nproc-per-node=3 main_dist.py --trigger=real_beard --recipe=gradient-matching --poisonkey=9-2 --alpha=0.1 --beta=0.0 --scenario=finetuning --train_max_epoch=20 --threatmodel=clean-single-source 

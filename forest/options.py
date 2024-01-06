@@ -14,7 +14,7 @@ def options():
     ###########################################################################
     parser.add_argument('--f')
     # Central:
-    parser.add_argument('--net', default='Resnet50', type=lambda s: [str(item) for item in s.split(',')])
+    parser.add_argument('--net', default='vgg16', type=lambda s: [str(item) for item in s.split(',')])
     parser.add_argument('--dataset', default='datasets/Facial_recognition', type=str, choices=['Facial_recognition', 'Object_detection'])
     parser.add_argument('--recipe', default='gradient-matching', type=str, choices=['gradient-matching', 'gradient-matching-private', 
                                                                                     'hidden-trigger', 'hidden-trigger-mt' 'gradient-matching-mt',
@@ -26,14 +26,14 @@ def options():
 
     # Reproducibility management:
     parser.add_argument('--poisonkey', default='3-1', type=str, help='Initialize poison setup with this key.')  # Take input such as 05-1 for [0, 5] as the sources and 1 as the target
-    parser.add_argument('--poison_seed', default=None, type=int, help='Initialize the poisons with this key.')
-    parser.add_argument('--model_seed', default=None, type=int, help='Initialize the model with this key.')
+    parser.add_argument('--poison_seed', default=12345, type=int, help='Initialize the poisons with this key.')
+    parser.add_argument('--model_seed', default=23456, type=int, help='Initialize the model with this key.')
     parser.add_argument('--deterministic', action='store_true', help='Disable CUDNN non-determinism.')
 
     # Files and folders
     parser.add_argument('--name', default='', type=str, help='Name tag for the result table and possibly for export folders.')
     parser.add_argument('--poison_path', default='poisons/', type=str)
-    parser.add_argument('--model_savepath', default='./models/', type=str)
+    parser.add_argument('--model_savepath', default='models/', type=str)
     ###########################################################################
 
     # Mixing defense
@@ -56,7 +56,7 @@ def options():
     parser.add_argument('--defense_sources', default=None, type=str, help='Different choices for source selection. Options: shuffle/sep-half/sep-1/sep-10')
 
     # Filter defenses
-    parser.add_argument('--filter_defense', default='', type=str, help='Which filtering defense to use.', choices=['madry', 'deepknn', 'activation_clustering'])
+    parser.add_argument('--filter_defense', default='', type=str, help='Which filtering defense to use.', choices=['spectral_signature', 'deepknn', 'activation_clustering', 'spectre'])
 
     # Adaptive attack variants
     parser.add_argument('--padversarial', default=None, type=str, help='Use adversarial steps during poison brewing.')
@@ -81,7 +81,7 @@ def options():
     parser.add_argument('--stagger', action='store_true', help='Stagger the network ensemble if it exists')
     parser.add_argument('--clean_grad', action='store_true', help='Compute the first-order poison gradient.')
     parser.add_argument('--step', action='store_true', help='Optimize the model for one epoch.')
-    parser.add_argument('--max_epoch', default=20, type=int, help='Train only up to this epoch before poisoning.')
+    parser.add_argument('--train_max_epoch', default=30, type=int, help='Train only up to this epoch before poisoning.')
 
     # Use only a subset of the dataset:
     parser.add_argument('--ablation', default=1.0, type=float, help='What percent of data (including poisons) to use for validation')
@@ -103,10 +103,10 @@ def options():
 
     # Optimization setup
     parser.add_argument('--optimization', default='conservative-adam', type=str, help='Optimization Strategy')
+    
     # Strategy overrides:
-    parser.add_argument('--epochs', default=20, type=int, help='Override default epochs of --optimization strategy')
     parser.add_argument('--batch_size', default=64, type=int, help='Override default batch_size of --optimization strategy')
-    parser.add_argument('--lr', default=None, type=float, help='Override default learning rate of --optimization strategy')
+    parser.add_argument('--lr', default=0.01, type=float, help='Override default learning rate of --optimization strategy')
     parser.add_argument('--noaugment', action='store_true', help='Do not use data augmentation during training.')
 
     # Optionally, datasets can be stored within RAM:
@@ -135,7 +135,7 @@ def options():
     parser.add_argument('--opacity', default=32/255, type=float, help='The opacity of digital trigger')
     parser.add_argument('--retrain_iter', default=100, type=int, help='Start retraining every <retrain_iter> iterations')
     parser.add_argument('--source_selection_strategy', default=None, type=str, choices=['max_gradient', 'max_loss'], help='sources_train_rate selection strategy')
-    parser.add_argument('--poison_selection_strategy', default='max_gradient', type=str, choices=['max_gradient', 'max_loss'], help='Poison selection strategy')
+    parser.add_argument('--poison_selection_strategy', default="max_gradient", type=str, choices=['max_gradient', 'max_loss'], help='Poison selection strategy')
     parser.add_argument('--raw_poison_rate', default=1.0, type=float, help='Fraction of target_class dataset that CAN BE SELECTED as poisons')
     
     # Poison properties / controlling the strength of the attack:

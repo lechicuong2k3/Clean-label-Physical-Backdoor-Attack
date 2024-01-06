@@ -107,4 +107,17 @@ def set_deterministic():
 def write(content, file):
     with open(file, 'a') as f:
         f.write(content + '\n')
+  
+def global_meters_all_avg(device, *meters):
+    """meters: scalar values of loss/accuracy calculated in each rank"""
+    tensors = []
+    for meter in meters:
+        if isinstance(meter, torch.Tensor):
+            tensors.append(meter)
+        else:
+            tensors.append(torch.tensor(meter, device=device, dtype=torch.float32))
+    for tensor in tensors:
+        # each item of `tensors` is all-reduced starting from index 0 (in-place)
+        torch.distributed.all_reduce(tensor)
 
+    return [(tensor / torch.distributed.get_world_size()).item() for tensor in tensors]

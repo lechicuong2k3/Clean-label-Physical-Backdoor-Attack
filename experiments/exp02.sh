@@ -1,14 +1,11 @@
-# Experiment 1: HTBA for one-to-one attack for real_beard trigger and target class 1 
-# We use signAdam for comparison
-CUDA_VISIBLE_DEVICES=0,1
-python main.py --poisonkey=0-1 --recipe=hidden-trigger --attackoptim=signAdam --trigger=real_beard --alpha=0.4 --beta=0.1 & 
-python main.py --poisonkey=0-1 --recipe=hidden-trigger --attackoptim=signAdam --trigger=real_beard --alpha=0.3 --beta=0.2 & 
-wait
-python main.py --poisonkey=2-1 --recipe=hidden-trigger --attackoptim=signAdam --trigger=real_beard --alpha=0.4 --beta=0.1 & 
-python main.py --poisonkey=3-1 --recipe=hidden-trigger --attackoptim=signAdam --trigger=real_beard --alpha=0.4 --beta=0.1 & 
-wait
-python main.py --poisonkey=4-1 --recipe=hidden-trigger --attackoptim=signAdam --trigger=real_beard --alpha=0.4 --beta=0.1 & 
-python main.py --poisonkey=5-1 --recipe=hidden-trigger --attackoptim=signAdam --trigger=real_beard --alpha=0.4 --beta=0.1 & 
-wait
-python main.py --poisonkey=6-1 --recipe=hidden-trigger --attackoptim=signAdam --trigger=real_beard --alpha=0.4 --beta=0.1 & 
-python main.py --poisonkey=7-1 --recipe=hidden-trigger --attackoptim=signAdam --trigger=real_beard --alpha=0.4 --beta=0.1 & 
+torchrun --standalone --nnodes=1 --nproc-per-node=3 main_dist.py --trigger=real_beard --recipe=label-consistent --poisonkey=3-0 --alpha=0.1 --beta=0.0 --scenario=finetuning --train_max_epoch=20 --threatmodel=clean-multi-source 
+torchrun --standalone --nnodes=1 --nproc-per-node=3 main_dist.py --trigger=real_beard --recipe=label-consistent --poisonkey=5-0 --alpha=0.1 --beta=0.0 --scenario=finetuning --train_max_epoch=20 --threatmodel=clean-multi-source 
+torchrun --standalone --nnodes=1 --nproc-per-node=3 main_dist.py --trigger=real_beard --recipe=label-consistent --poisonkey=7-0 --alpha=0.1 --beta=0.0 --scenario=finetuning --train_max_epoch=20 --threatmodel=clean-multi-source 
+
+torchrun --standalone --nnodes=1 --nproc-per-node=3 main_dist.py --trigger=real_beard --recipe=label-consistent --poisonkey=1-3 --alpha=0.1 --beta=0.0 --scenario=finetuning --train_max_epoch=20 --threatmodel=clean-multi-source 
+torchrun --standalone --nnodes=1 --nproc-per-node=3 main_dist.py --trigger=real_beard --recipe=label-consistent --poisonkey=4-3 --alpha=0.1 --beta=0.0 --scenario=finetuning --train_max_epoch=20 --threatmodel=clean-multi-source 
+torchrun --standalone --nnodes=1 --nproc-per-node=3 main_dist.py --trigger=real_beard --recipe=label-consistent --poisonkey=8-3 --alpha=0.1 --beta=0.0 --scenario=finetuning --train_max_epoch=20 --threatmodel=clean-multi-source 
+
+torchrun --standalone --nnodes=1 --nproc-per-node=3 main_dist.py --trigger=real_beard --recipe=label-consistent --poisonkey=0-2 --alpha=0.1 --beta=0.0 --scenario=finetuning --train_max_epoch=20 --threatmodel=clean-multi-source 
+torchrun --standalone --nnodes=1 --nproc-per-node=3 main_dist.py --trigger=real_beard --recipe=label-consistent --poisonkey=6-2 --alpha=0.1 --beta=0.0 --scenario=finetuning --train_max_epoch=20 --threatmodel=clean-multi-source 
+torchrun --standalone --nnodes=1 --nproc-per-node=3 main_dist.py --trigger=real_beard --recipe=label-consistent --poisonkey=9-2 --alpha=0.1 --beta=0.0 --scenario=finetuning --train_max_epoch=20 --threatmodel=clean-multi-source 

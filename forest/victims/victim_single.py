@@ -10,13 +10,11 @@ from .models import get_model
 from .training import get_optimizers, run_step
 from ..hyperparameters import training_strategy
 from ..utils import set_random_seed, write
-from ..consts import BENCHMARK, SHARING_STRATEGY
+from ..consts import BENCHMARK, SHARING_STRATEGY, FINETUNING_LR_DROP
 torch.backends.cudnn.benchmark = BENCHMARK
 torch.multiprocessing.set_sharing_strategy(SHARING_STRATEGY)
 
 from .victim_base import _VictimBase
-
-FINETUNING_LR_DROP = 0.001
 
 class _VictimSingle(_VictimBase):
     """Implement model-specific code and behavior for a single model on a single GPU.

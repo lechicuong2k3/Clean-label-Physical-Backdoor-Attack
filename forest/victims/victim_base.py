@@ -1,13 +1,12 @@
 """Base victim class."""
 
 import torch
-
+import os
 from .models import get_model
 from .training import get_optimizers
 from ..hyperparameters import training_strategy
-from ..utils import average_dicts, write
-
-FINETUNING_LR_DROP = 0.001
+from ..utils import write
+from ..consts import FINETUNING_LR_DROP
 
 class _VictimBase:
     """Implement model-specific code and behavior.
@@ -88,14 +87,35 @@ class _VictimBase:
     def load_feature_representation(self):
         raise NotImplementedError()
 
+    def save_model(self, path):
+        """Save model to path."""
+        if isinstance(self.model, torch.nn.DataParallel) or isinstance(self.model, torch.nn.parallel.DistributedDataParallel):
+            torch.save(self.model.module.state_dict(), path)
+        else:
+            torch.save(self.model.state_dict(), path)
 
     """ METHODS FOR (CLEAN) TRAINING AND TESTING OF BREWED POISONS"""
 
     def train(self, kettle, max_epoch=None):
         """Clean (pre)-training of the chosen model, no poisoning involved."""
             
-        if self.rank == None or self.rank == 0: write('Starting clean training with {} scenario ...'.format(self.args.scenario), self.args.output)
-        self._iterate(kettle, poison_delta=None, max_epoch=max_epoch) # Validate poison
+        if self.rank == None or self.rank == 0: 
+            write('Starting clean training with {} scenario ...'.format(self.args.scenario), self.args.output)
+        
+        save_path = os.path.join(self.args.model_savepath, "clean", f"{self.args.scenario}_{self.args.trigger}_{self.model_init_seed}_{self.args.train_max_epoch}.pth")
+            
+        if self.args.dryrun == True or os.path.exists(save_path) == False:
+            self._iterate(kettle, poison_delta=None, max_epoch=max_epoch) # Validate poison
+            if self.args.dryrun == False:
+                os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                self.save_model(save_path)
+        else: 
+            if self.rank == None or self.rank == 0: 
+                write('Model already exists, skipping training.', self.args.output)
+            if self.rank == None:
+                self.model.load_state_dict(torch.load(save_path))
+            else:
+                self.model.module.load_state_dict(torch.load(save_path))
         
         if self.args.load_feature_repr:
             self.save_feature_representation()

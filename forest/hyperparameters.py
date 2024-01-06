@@ -2,8 +2,6 @@
 
 from dataclasses import dataclass, asdict
 
-BRITTLE_NETS = ['convnet', 'mobilenet', 'vgg', 'alexnet']  # handled with lower learning rate
-
 def training_strategy(model_name, args):
     """Parse training strategy."""
     if args.optimization == 'conservative-sgd':
@@ -22,9 +20,8 @@ def training_strategy(model_name, args):
         raise ValueError(f'Unknown opt. strategy {args.optimization}.')
     defs = Hyperparameters(**defaults.asdict())
 
-    # Overwrite some hyperparameters from args
-    if args.epochs is not None:
-        defs.epochs = args.epochs
+    if args.train_max_epoch is not None:
+        defs.epochs = args.train_max_epoch
     if args.batch_size is not None:
         defs.batch_size = args.batch_size
     if args.lr is not None:
@@ -33,8 +30,6 @@ def training_strategy(model_name, args):
         defs.augmentations = False
     else:
         defs.augmentations = args.data_aug
-    if any(net in model_name.lower() for net in BRITTLE_NETS):
-        defs.lr *= 0.1
 
     # Modifications to gradient noise settings
     if defs.privacy is not None:

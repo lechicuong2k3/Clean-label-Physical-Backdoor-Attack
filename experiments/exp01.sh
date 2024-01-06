@@ -1,13 +1,12 @@
-# Experiment 1: Sleeper agent for one-to-one attack for real_beard trigger and target class 1 
-CUDA_VISIBLE_DEVICES=0,1
-python main.py --poisonkey=0-1 --recipe=gradient-matching --attackoptim=signAdam --trigger=real_beard --alpha=0.4 --beta=0.1 & 
-python main.py --poisonkey=0-1 --recipe=gradient-matching --attackoptim=signAdam --trigger=real_beard --alpha=0.3 --beta=0.2 & 
-wait
-python main.py --poisonkey=2-1 --recipe=gradient-matching --attackoptim=signAdam --trigger=real_beard --alpha=0.4 --beta=0.1 & 
-python main.py --poisonkey=3-1 --recipe=gradient-matching --attackoptim=signAdam --trigger=real_beard --alpha=0.4 --beta=0.1 & 
-wait
-python main.py --poisonkey=4-1 --recipe=gradient-matching --attackoptim=signAdam --trigger=real_beard --alpha=0.4 --beta=0.1 & 
-python main.py --poisonkey=5-1 --recipe=gradient-matching --attackoptim=signAdam --trigger=real_beard --alpha=0.4 --beta=0.1 & 
-wait
-python main.py --poisonkey=6-1 --recipe=gradient-matching --attackoptim=signAdam --trigger=real_beard --alpha=0.4 --beta=0.1 & 
-python main.py --poisonkey=7-1 --recipe=gradient-matching --attackoptim=signAdam --trigger=real_beard --alpha=0.4 --beta=0.1 & 
+export OMP_NUM_THREADS=3;
+torchrun --standalone --nnodes=1 --nproc-per-node=3 main_dist.py --trigger=real_beard --recipe=naive --poisonkey=3-0 --alpha=0.0 --beta=0.1 --scenario=finetuning --train_max_epoch=20 --threatmodel=clean-multi-source 
+torchrun --standalone --nnodes=1 --nproc-per-node=3 main_dist.py --trigger=real_beard --recipe=naive --poisonkey=5-0 --alpha=0.0 --beta=0.1 --scenario=finetuning --train_max_epoch=20 --threatmodel=clean-multi-source 
+torchrun --standalone --nnodes=1 --nproc-per-node=3 main_dist.py --trigger=real_beard --recipe=naive --poisonkey=7-0 --alpha=0.0 --beta=0.1 --scenario=finetuning --train_max_epoch=20 --threatmodel=clean-multi-source 
+
+torchrun --standalone --nnodes=1 --nproc-per-node=3 main_dist.py --trigger=real_beard --recipe=naive --poisonkey=1-3 --alpha=0.1 --beta=0.0 --scenario=finetuning --train_max_epoch=20 --threatmodel=clean-multi-source 
+torchrun --standalone --nnodes=1 --nproc-per-node=3 main_dist.py --trigger=real_beard --recipe=naive --poisonkey=4-3 --alpha=0.1 --beta=0.0 --scenario=finetuning --train_max_epoch=20 --threatmodel=clean-multi-source 
+torchrun --standalone --nnodes=1 --nproc-per-node=3 main_dist.py --trigger=real_beard --recipe=naive --poisonkey=8-3 --alpha=0.1 --beta=0.0 --scenario=finetuning --train_max_epoch=20 --threatmodel=clean-multi-source 
+
+torchrun --standalone --nnodes=1 --nproc-per-node=3 main_dist.py --trigger=real_beard --recipe=naive --poisonkey=0-2 --alpha=0.1 --beta=0.0 --scenario=finetuning --train_max_epoch=20 --threatmodel=clean-multi-source 
+torchrun --standalone --nnodes=1 --nproc-per-node=3 main_dist.py --trigger=real_beard --recipe=naive --poisonkey=6-2 --alpha=0.1 --beta=0.0 --scenario=finetuning --train_max_epoch=20 --threatmodel=clean-multi-source 
+torchrun --standalone --nnodes=1 --nproc-per-node=3 main_dist.py --trigger=real_beard --recipe=naive --poisonkey=9-2 --alpha=0.1 --beta=0.0 --scenario=finetuning --train_max_epoch=20 --threatmodel=clean-multi-source 

@@ -9,7 +9,7 @@ from .utils import print_and_save_stats
 from .batched_attacks import construct_attack, _gradient_matching
 
 from ..consts import NON_BLOCKING, BENCHMARK
-from ..utils import write
+from ..utils import write, global_meters_all_avg
 torch.backends.cudnn.benchmark = BENCHMARK
 
 def run_step(kettle, poison_delta, epoch, model, defs, optimizer, scheduler, loss_fn=nn.CrossEntropyLoss(reduction='mean'), rank=None):
@@ -79,8 +79,12 @@ def run_step(kettle, poison_delta, epoch, model, defs, optimizer, scheduler, los
                     inputs = inputs + delta  # Kind of a reparametrization trick
                     
             # Switch into training mode
-
-            list(model.children())[-1].train() if model.module.frozen else model.train()        
+            if isinstance(model, torch.nn.DataParallel) or isinstance(model, torch.nn.parallel.DistributedDataParallel):
+                frozen = model.module.frozen
+                list(model.module.children())[-1].train() if frozen else model.train()  
+            else:
+                frozen = model.frozen
+                list(model.children())[-1].train() if frozen else model.train()     
 
             # Change loss function to include corrective terms if mixing with correction
             if activate_defenses and (defs.mixing_method != None and defs.mixing_method['correction']):
@@ -97,12 +101,12 @@ def run_step(kettle, poison_delta, epoch, model, defs, optimizer, scheduler, los
             loss, preds = criterion(outputs, labels)
             
         correct_preds += preds
-        
+        epoch_loss += loss.item() * inputs.shape[0]
         total_preds += labels.shape[0]
+        
         differentiable_params = [p for p in model.parameters() if p.requires_grad]
             
         scaler.scale(loss).backward()
-        epoch_loss += loss.item()
 
         if activate_defenses:
             with torch.no_grad():
@@ -134,40 +138,41 @@ def run_step(kettle, poison_delta, epoch, model, defs, optimizer, scheduler, los
             scheduler.step()
         if kettle.args.dryrun:
             break
+        
     if defs.scheduler == 'linear':
         scheduler.step()
 
-    if epoch == defs.epochs:
+    if epoch == defs.epochs or epoch % defs.validate == 0 or kettle.args.dryrun:
         predictions = run_validation(model, loss_fn, valid_loader,
-                                                 kettle.poison_setup['poison_class'],
-                                                 kettle.poison_setup['source_class'],
-                                                 kettle.setup, kettle.args.dryrun)
-                 
+                                                kettle.poison_setup['poison_class'],
+                                                kettle.poison_setup['source_class'],
+                                                kettle.setup)
+                
         source_poison_acc, source_poison_loss, source_clean_acc, source_clean_loss = check_sources(
-            model, loss_fn, kettle.source_testset, kettle.poison_setup['poison_class'],
+            model, loss_fn, kettle.source_testloader, kettle.poison_setup['poison_class'],
             kettle.setup)
         
-        suspicion_rate, false_positive_rate = check_suspicion(model, suspicion_loader, fp_loader, kettle.poison_setup['target_class'], kettle.setup)
-    elif epoch % defs.validate == 0:
-        predictions = run_validation(model, loss_fn, valid_loader,
-                                                 kettle.poison_setup['poison_class'],
-                                                 kettle.poison_setup['source_class'],
-                                                 kettle.setup, kettle.args.dryrun)
-        source_poison_acc, source_poison_loss, source_clean_acc, source_clean_loss = check_sources(
-            model, loss_fn, kettle.source_testset, kettle.poison_setup['poison_class'],
-            kettle.setup)
+        if epoch == defs.epochs or kettle.args.dryrun:
+            suspicion_rate, false_positive_rate = check_suspicion(model, suspicion_loader, fp_loader, kettle.poison_setup['target_class'], kettle.setup)
+        else:
+            suspicion_rate, false_positive_rate = None, None
         
-        suspicion_rate, false_positive_rate = None, None
     else:
         predictions, suspicion_rate, false_positive_rate = None, None, None
         source_poison_acc, source_poison_loss, source_clean_acc, source_clean_loss = None, None, None, None
 
     current_lr = optimizer.param_groups[0]['lr']
+    
+    train_loss = epoch_loss / total_preds
+    train_acc = correct_preds / total_preds
+    
+    if rank != None: 
+        train_loss, train_acc = global_meters_all_avg(kettle.setup['device'], train_loss, train_acc)
     if rank == 0 or rank == None:
-        print_and_save_stats(epoch, current_lr, epoch_loss / (batch + 1), correct_preds / total_preds, predictions, source_poison_acc, source_poison_loss, source_clean_acc, source_clean_loss, suspicion_rate, false_positive_rate, kettle.args.output)
+        print_and_save_stats(epoch, current_lr, train_loss, train_acc, predictions, source_poison_acc, source_poison_loss, source_clean_acc, source_clean_loss, suspicion_rate, false_positive_rate, kettle.args.output)
 
 
-def run_validation(model, criterion, dataloader, target_class, source_class, setup, dryrun=False):
+def run_validation(model, criterion, dataloader, target_class, source_class, setup):
     """Get accuracy of model relative to dataloader.
 
     Hint: The validation numbers in "target" and "source" explicitly reference the first label in target_class and
@@ -195,9 +200,6 @@ def run_validation(model, criterion, dataloader, target_class, source_class, set
             predictions['source']['total'] += torch.isin(labels, source_class).sum().item()
             predictions['source']['correct'] += (predicted == labels)[torch.isin(labels, source_class)].sum().item()
 
-            if dryrun:
-                break
-
     for key in predictions.keys():
         if predictions[key]['total'] > 0:
             predictions[key]['avg'] = predictions[key]['correct'] / predictions[key]['total']
@@ -208,7 +210,7 @@ def run_validation(model, criterion, dataloader, target_class, source_class, set
     predictions['all']['loss'] = loss_avg
     return predictions
 
-def check_sources(model, criterion, source_testsets, target_class, setup):
+def check_sources(model, criterion, source_testloader, target_class, setup):
     """Get poison accuracy and poison loss the source class on their target class."""
     model.eval()
     poison_accs, poison_losses, clean_accs, clean_losses = dict(), dict(), dict(), dict()
@@ -218,45 +220,38 @@ def check_sources(model, criterion, source_testsets, target_class, setup):
     total_clean_loss = 0
     total_sample_size = 0
     
-    for source_class, testset in source_testsets.items():  
-        if len(testset) > 0:
-            source_images = torch.stack([data[0] for data in testset]).to(**setup)
-            target_labels = torch.ones(len(testset)).to(device=setup['device'], dtype=torch.long, non_blocking=NON_BLOCKING) * target_class
-            original_labels = torch.stack([torch.as_tensor(data[1], device=setup['device'], dtype=torch.long) for data in testset])
-            with torch.no_grad():
-                outputs = model(source_images)
-                predictions = torch.argmax(outputs, dim=1)
-
-                poison_loss = criterion(outputs, target_labels)
-                clean_loss = criterion(outputs, original_labels)
-                
-                poison_corrects = (predictions == target_labels).sum()
-                clean_corrects = (predictions == original_labels).sum()
-                
-                total_clean_corrects += clean_corrects
-                total_poison_corrects += poison_corrects
-                total_poison_loss += poison_loss * predictions.size(0)
-                total_clean_loss += clean_loss * predictions.size(0)
-                total_sample_size += predictions.size(0)
-                
-                poison_accuracy = poison_corrects.float() / predictions.size(0)
-                clean_accuracy = clean_corrects.float() / predictions.size(0)
-
-            poison_accs[source_class] = poison_accuracy.item()
-            poison_losses[source_class] = poison_loss.item()
-            clean_accs[source_class] = clean_accuracy.item()
-            clean_losses[source_class] = clean_loss.item()
-        else:
-            poison_accs[source_class] = 0
-            poison_losses[source_class] = 0
-            clean_accs[source_class] = 0
-            clean_losses[source_class] = 0
+    for source_class, testloader in source_testloader.items(): 
+        poison_loss, clean_loss, poison_corrects, clean_corrects, totals = 0, 0, 0, 0, 0
+        with torch.no_grad():
+            for (inputs, labels, _) in testloader:
+                inputs = inputs.to(**setup)
+                original_labels = labels.to(device=setup['device'], dtype=torch.long, non_blocking=NON_BLOCKING)
+                target_labels = torch.tensor([target_class] * labels.shape[0]).to(device=setup['device'], dtype=torch.long, non_blocking=NON_BLOCKING)
+                outputs = model(inputs)
+                _, predictions = torch.max(outputs.data, 1)
+                totals += labels.shape[0]
             
-    if len(source_testsets) > 1:
-        poison_accs['avg'] = total_poison_corrects.float() / total_sample_size
-        poison_losses['avg'] = total_poison_loss / total_sample_size
-        clean_accs['avg'] = total_clean_corrects.float() / total_sample_size
-        clean_losses['avg'] = total_clean_loss / total_sample_size
+                poison_loss += inputs.shape[0] * criterion(outputs, target_labels)
+                clean_loss += inputs.shape[0] * criterion(outputs, original_labels)
+            
+                poison_corrects += (predictions == target_labels).sum()
+                clean_corrects += (predictions == original_labels).sum()
+        
+        poison_accs[source_class] = poison_corrects.float() / totals
+        poison_losses[source_class] = poison_loss / totals
+        clean_accs[source_class] = clean_corrects.float() / totals
+        clean_losses[source_class] = clean_loss / totals
+        
+        total_clean_corrects += clean_corrects
+        total_poison_corrects += poison_corrects
+        total_poison_loss += poison_loss
+        total_clean_loss += clean_loss
+        total_sample_size += totals
+        
+    poison_accs['avg'] = total_poison_corrects.float() / total_sample_size
+    poison_losses['avg'] = total_poison_loss / total_sample_size
+    clean_accs['avg'] = total_clean_corrects.float() / total_sample_size
+    clean_losses['avg'] = total_clean_loss / total_sample_size
         
     return poison_accs, poison_losses, clean_accs, clean_losses
 
@@ -340,8 +335,8 @@ def get_optimizers(model, args, defs):
         optimizer = torch.optim.Adam(optimized_parameters, lr=defs.lr, weight_decay=defs.weight_decay)
 
     if defs.scheduler == 'cyclic':
-        effective_batches = (50_000 // defs.batch_size) * defs.epochs
-        write(f'Optimization will run over {effective_batches} effective batches in a 1-cycle policy.', args.output)
+        effective_batches = (16000 // defs.batch_size) * defs.epochs
+        if args.local_rank == 0: write(f'Optimization will run over {effective_batches} effective batches in a 1-cycle policy.', args.output)
         scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=defs.lr / 100, max_lr=defs.lr,
                                                       step_size_up=effective_batches // 2,
                                                       cycle_momentum=True if defs.optimizer in ['SGD'] else False)

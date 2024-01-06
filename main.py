@@ -14,16 +14,11 @@ from forest.consts import BENCHMARK, NUM_CLASSES
 torch.backends.cudnn.benchmark = BENCHMARK
 
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
-os.environ["CUDA_VISIBLE_DEVICES"]="3"
-torch.cuda.empty_cache()
+os.environ["CUDA_VISIBLE_DEVICES"]="0,2,3"
 
 # Parse input arguments
 args = forest.options().parse_args()
-if ('gradient-matching' not in args.recipe) and ('hidden-trigger' not in args.recipe):
-    target = int(args.poisonkey.split('-')[1])
-    args.output = f'outputs/{args.recipe}/{args.scenario}/{args.trigger}/{args.net[0]}/{target}_{args.scenario}_{args.trigger}_{args.alpha}_{args.beta}_{args.attackoptim}.txt'   
-else:
-    args.output = f'outputs/{args.recipe}/{args.scenario}/{args.trigger}/{args.net[0]}/{args.poisonkey}_{args.scenario}_{args.trigger}_{args.alpha}_{args.beta}_{args.attackoptim}.txt'
+args.output = f'outputs/{args.recipe}/{args.scenario}/{args.trigger}/{args.net[0].upper()}/{args.poisonkey}_{args.scenario}_{args.trigger}_{args.alpha}_{args.beta}_{args.attackoptim}.txt'
     
 os.makedirs(os.path.dirname(args.output), exist_ok=True)
 open(args.output, 'w').close() # Clear the output files
@@ -45,13 +40,12 @@ if __name__ == "__main__":
     if args.skip_clean_training:
         write('Skipping clean training...', args.output)
     else:
-        write('Clean training model...', args.output)
-        model.train(data, max_epoch=args.max_epoch)
+        model.train(data, max_epoch=args.train_max_epoch)
     train_time = time.time()
+    print(str(datetime.timedelta(seconds=train_time - start_time)))
     
     # Select poisons based on maximum gradient norm
-    if args.poison_selection_strategy != None and args.recipe != 'naive':
-        data.select_poisons(model, args.poison_selection_strategy)
+    data.select_poisons(model, args.poison_selection_strategy)
     
     # Print data status
     data.print_status()

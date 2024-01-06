@@ -62,18 +62,16 @@ class KettleDistributed():
         self.class_names = self.trainset.classes
         self.prepare_diff_data_augmentations(normalize=NORMALIZE) # Create self.dm, self.ds, self.augment
 
-        self.num_workers = 0 
+        self.num_workers = 4 
         
         self.rank = torch.distributed.get_rank()
+        
         # Set random seed
         if self.args.poison_seed is None:
-            init_seed = torch.randint(0, 2**32 - 1, [1], device=self.setup['device'])
+            self.init_seed = np.random.randint(0, 2**32 - 1)
         else:
-            init_seed = torch.as_tensor(int(self.args.poison_seed), dtype=torch.int64, device=self.setup['device'])
-        torch.distributed.broadcast(init_seed, src=0)
-        if self.rank == 0:
-            print(f'Initializing Poison data with random seed {init_seed.item()}')
-        self.init_seed = init_seed.item()
+            self.init_seed = int(self.args.poison_seed)
+        if self.rank == 0: print(f'Initializing Poison data with random seed {self.init_seed}')
         set_random_seed(self.init_seed)
 
         if self.args.cache_dataset:
@@ -83,22 +81,16 @@ class KettleDistributed():
 
         self.construction() # Create self.poisonset, self.source_testset, self.validset, self.poison_setup
         
-        train_sampler = torch.utils.data.distributed.DistributedSampler(
+        self.train_sampler = torch.utils.data.distributed.DistributedSampler(
             self.trainset,
             num_replicas=self.args.world_size,
             rank=self.args.local_rank,
         )
         
-        valid_sampler = torch.utils.data.distributed.DistributedSampler(
-            self.validset,
-            num_replicas=self.args.world_size,
-            rank=self.args.local_rank,
-        )
-        
         # Generate loaders:
-        self.trainloader = torch.utils.data.DataLoader(self.trainset, batch_size=self.batch_size, sampler=train_sampler,
+        self.trainloader = torch.utils.data.DataLoader(self.trainset, batch_size=self.batch_size, sampler=self.train_sampler,
                                                        drop_last=False, num_workers=self.num_workers, pin_memory=PIN_MEMORY)
-        self.validloader = torch.utils.data.DataLoader(self.validset, batch_size=self.batch_size * 2, sampler=valid_sampler,
+        self.validloader = torch.utils.data.DataLoader(self.validset, batch_size=self.batch_size, shuffle=False,
                                                        drop_last=False, num_workers=self.num_workers, pin_memory=PIN_MEMORY)
 
         # Ablation on a subset?
@@ -245,15 +237,20 @@ class KettleDistributed():
             if DISTRIBUTED_BACKEND == 'nccl':
                 init = init.to(device=self.setup['device'])
                 torch.distributed.broadcast(init, src=0)
-                init.to(device=torch.device('cpu'))
+                init = init.to(device=torch.device('cpu'))
             else:
                 torch.distributed.broadcast(init, src=0)
                 
         return init
 
     def reset_trainset(self, new_ids):
+        train_sampler = torch.utils.data.distributed.DistributedSampler(
+            self.trainset,
+            num_replicas=self.args.world_size,
+            rank=self.args.local_rank,
+        )
         self.trainset = Subset(self.trainset, indices=new_ids)
-        self.trainloader = torch.utils.data.DataLoader(self.trainset, batch_size=min(self.batch_size, len(self.trainset)),
+        self.trainloader = torch.utils.data.DataLoader(self.trainset, batch_size=self.batch_size,
                                                        shuffle=True, drop_last=False, num_workers=self.num_workers, pin_memory=PIN_MEMORY)
 
     def lookup_poison_indices(self, image_ids):
@@ -367,14 +364,19 @@ class KettleDistributed():
         else:
             criterion = torch.nn.CrossEntropyLoss()
             
-        
-        if selection == 'max_gradient':
+        images = torch.stack([data[0] for data in self.poisonset], dim=0).to(**self.setup)
+        labels = torch.tensor([data[1] for data in self.poisonset]).to(device=self.setup['device'], dtype=torch.long)
+        poison_target_ids = torch.tensor([data[2] for data in self.poisonset], dtype=torch.long)
+            
+        if selection == None:
+            target_class = self.poison_setup['poison_class']
+            poison_num = ceil(np.ceil(self.args.alpha * len(self.trainset_distribution[target_class])))
+            indices = random.sample(self.trainset_distribution[target_class], poison_num)
+            
+        elif selection == 'max_gradient':
             if self.rank == 0:
                 write('Selections strategy is {}'.format(selection), self.args.output)
-            images = torch.stack([data[0] for data in self.poisonset], dim=0).to(**self.setup)
-            labels = torch.tensor([data[1] for data in self.poisonset]).to(device=self.setup['device'], dtype=torch.long)
-            poison_target_ids = torch.tensor([data[2] for data in self.poisonset], dtype=torch.long)
-
+                
             # single model
             if self.args.ensemble == 1:
                 grad_norms = []
@@ -401,7 +403,7 @@ class KettleDistributed():
                                 grad_norm += grad.detach().pow(2).sum()
                             grad_norms_list[i].append(grad_norm.sqrt())
 
-                write(f'Taking average gradient norm of ensemble of {len(victim.models)} models', self.args.output)
+                if self.rank == 0: write(f'Taking average gradient norm of ensemble of {len(victim.models)} models', self.args.output)
                 grad_norms = [sum(col) / float(len(col)) for col in zip(*grad_norms_list)]
             
             target_class = self.poison_setup['poison_class']
@@ -455,9 +457,10 @@ class KettleDistributed():
         self.triggerset_dist = self.class_distribution(self.triggerset)
         
         # Parse threat model
+        self.extract_poisonkey()
+        self.setup_suspicionset() # Set up suspicionset and false positive set
         self.poison_setup = self.parse_threats() # Return a dictionary of poison_budget, source_num, poison_class, source_class, target_class
         self.setup_poisons() # Set up source trainset and source testset
-        self.setup_suspicionset() # Set up suspicionset and false positive set
         
         if self.args.recipe == 'label-consistent':
             transform = v2.Compose([v2.ToImageTensor(), v2.ConvertImageDtype()])
@@ -479,6 +482,18 @@ class KettleDistributed():
             dist[source].append(idx)
         return dist
 
+    def extract_poisonkey(self):
+        if self.args.poisonkey != None:
+            if '-' not in self.args.poisonkey: raise ValueError('Invalid poison pair supplied. Must be of form "source-target"')
+            split = self.args.poisonkey.split('-')
+            self.source_class, self.target_class = list(map(int, split[0].split())), int(split[1]) 
+        else:
+            num_classes = len(self.class_names)
+            self.source_class = np.random.choice(range(num_classes), size=self.args.num_source_classes, replace=False)
+            list_intentions = list(range(num_classes))
+            list_intentions.remove(self.source_class)
+            self.target_class = np.random.choice(list_intentions)
+            
     def parse_threats(self):
         """Parse the different threat models.
         Poisonkey: None or a string of "{source_classes}-{target_class} (Deterministic choice of source classes and target class)". 
@@ -495,35 +510,24 @@ class KettleDistributed():
         clean-all-source draws poisons from a target class and optimize poison through sample from multiple source classes
         third-party draws all poisons from a class that is unrelated to both source and target label.
         self-betrayal draws all poisons from the source_class
-        """
-        if self.args.poisonkey != None:
-            if '-' not in self.args.poisonkey: raise ValueError('Invalid poison pair supplied. Must be of form "source-target"')
-            split = self.args.poisonkey.split('-')
-            source_class, target_class = list(map(int, split[0].split())), int(split[1]) 
-        else:
-            num_classes = len(self.class_names)
-            source_class = np.random.choice(range(num_classes), size=self.args.num_source_classes, replace=False)
-            list_intentions = list(range(num_classes))
-            list_intentions.remove(source_class)
-            target_class = np.random.choice(list_intentions)
-        
+        """        
         if self.args.recipe in ['naive', 'label-consistent']:
             # Take all source class except target class
             num_classes = len(self.class_names)
             list_intentions = list(range(num_classes))
-            list_intentions.remove(target_class)
-            source_class = list_intentions
+            list_intentions.remove(self.target_class)
+            self.source_class = list_intentions
             
         if self.args.threatmodel == 'dirty-single-source':
             raise NotImplementedError('Dirty single source threat model is not implemented yet!')
         elif self.args.threatmodel == 'dirty-all-source':
             raise NotImplementedError('Dirty all source threat model is not implemented yet!')
         elif self.args.threatmodel == 'clean-single-source':
-            if len(source_class) != 1: raise ValueError('Clean single source threat model requires one source class!')
-            return dict(poison_class=target_class, target_class=target_class, source_class=source_class)
+            if len(self.source_class) != 1: raise ValueError('Clean single source threat model requires one source class!')
+            return dict(poison_class=self.target_class, target_class=self.target_class, source_class=self.source_class)
         elif self.args.threatmodel == 'clean-multi-source':
-            if len(source_class) < 2: raise ValueError('Clean multi source threat model requires at least two source classes!')
-            return dict(poison_class=target_class, target_class=target_class, source_class=source_class)
+            if len(self.source_class) < 2: raise ValueError('Clean multi source threat model requires at least two source classes!')
+            return dict(poison_class=self.target_class, target_class=self.target_class, source_class=self.source_class)
         elif self.args.threatmodel == 'clean-all-source':
             raise NotImplementedError('Clean all source threat model is not implemented yet!')
         elif self.args.threatmodel == 'third-party':
@@ -551,8 +555,8 @@ class KettleDistributed():
         false_target_idcs = []
         false_positive_idcs = []
         for source_class in self.triggerset_dist.keys():
-            if source_class != self.poison_setup['target_class']:
-                if source_class not in self.poison_setup['source_class']:
+            if source_class != self.target_class:
+                if source_class not in self.source_class:
                     false_trigger_idcs.extend(suspicionset_distribution[source_class])
                     false_target_idcs.extend(self.triggerset_dist[source_class])
                 else:
@@ -563,20 +567,10 @@ class KettleDistributed():
         
         suspicionset = ConcatDataset([suspicionset_1, suspicionset_2], transform=test_transform) # Overwrite suspicionset
         fpset = Subset(suspicionset, false_positive_idcs, transform=test_transform)
-        
-        suspicion_sampler = torch.utils.data.distributed.DistributedSampler(
-            suspicionset,
-            num_replicas=self.args.world_size,
-            rank=self.args.local_rank,
-        )
-        fpset_sampler = torch.utils.data.distributed.DistributedSampler(
-            fpset,
-            num_replicas=self.args.world_size,
-            rank=self.args.local_rank,
-        )
-        self.suspicionloader = torch.utils.data.DataLoader(suspicionset, batch_size=self.batch_size * 2, sampler=suspicion_sampler,
+
+        self.suspicionloader = torch.utils.data.DataLoader(suspicionset, batch_size=self.batch_size, shuffle=False,
                                                        drop_last=False, num_workers=self.num_workers, pin_memory=PIN_MEMORY)
-        self.fploader = torch.utils.data.DataLoader(fpset, batch_size=self.batch_size * 2, sampler=fpset_sampler,
+        self.fploader = torch.utils.data.DataLoader(fpset, batch_size=self.batch_size, shuffle=False,
                                                    drop_last=False, num_workers=self.num_workers, pin_memory=PIN_MEMORY)
         
     def setup_poisons(self):
@@ -620,8 +614,16 @@ class KettleDistributed():
         self.source_train_num = len(trigger_trainset_idcs)
 
         self.source_testset = dict()
+        self.source_testloader = dict()
         for source_class in self.poison_setup['source_class']:
             self.source_testset[source_class] = Subset(self.triggerset, self.triggerset_dist[source_class], transform=test_transform)
+            sampler = torch.utils.data.distributed.DistributedSampler(
+                self.source_testset[source_class],
+                num_replicas=self.args.world_size,
+                rank=self.args.local_rank,
+            )
+            self.source_testloader[source_class] = torch.utils.data.DataLoader(self.source_testset[source_class], batch_size=self.batch_size, sampler=sampler,
+                                                           drop_last=False, num_workers=self.num_workers, pin_memory=PIN_MEMORY)
         self.source_test_num = len(triggerset_source_idcs)
         
         if self.args.recipe == 'naive' and self.args.beta == 0.0: 

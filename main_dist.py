@@ -15,26 +15,21 @@ from forest.consts import BENCHMARK, NUM_CLASSES, SHARING_STRATEGY
 
 torch.backends.cudnn.benchmark = BENCHMARK
 torch.multiprocessing.set_sharing_strategy(SHARING_STRATEGY)
+torch.cuda.empty_cache()
 
+# Parse input arguments
+args = forest.options().parse_args()
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
-os.environ["CUDA_VISIBLE_DEVICES"]="1,0"
-os.environ["OMP_NUM_THREADS"]="3"
+os.environ["CUDA_VISIBLE_DEVICES"]="3,0,2"
+args.local_rank = int(os.environ['LOCAL_RANK'])
 
 if not (torch.cuda.device_count() > 1):
     raise ValueError('Cannot run distributed on single GPU!')
 
-# Parse input arguments
-args = forest.options().parse_args()
-args.local_rank = int(os.environ['LOCAL_RANK'])
-
 if args.local_rank is None:
     raise ValueError('This script should only be launched via the pytorch launch utility!')
 
-if ('gradient-matching' not in args.recipe) and ('hidden-trigger' not in args.recipe):
-    target = int(args.poisonkey.split('-')[1])
-    args.output = f'outputs/{args.recipe}/{args.scenario}/{args.trigger}/{args.net[0]}/{target}_{args.scenario}_{args.trigger}_{args.alpha}_{args.beta}_{args.attackoptim}.txt'   
-else:
-    args.output = f'outputs/{args.recipe}/{args.scenario}/{args.trigger}/{args.net[0]}/{args.poisonkey}_{args.scenario}_{args.trigger}_{args.alpha}_{args.beta}_{args.attackoptim}.txt'
+args.output = f'outputs/{args.recipe}/{args.scenario}/{args.trigger}/{args.net[0].upper()}/{args.poisonkey}_{args.scenario}_{args.trigger}_{args.alpha}_{args.beta}_{args.attackoptim}.txt'
     
 os.makedirs(os.path.dirname(args.output), exist_ok=True)
 open(args.output, 'w').close() # Clear the output files
@@ -43,7 +38,6 @@ if args.deterministic:
     forest.utils.set_deterministic()
 
 if __name__ == "__main__":
-    
     if torch.cuda.device_count() < args.local_rank:
         raise ValueError('Process invalid, oversubscribing to GPUs is not possible in this mode.')
     else:
@@ -51,7 +45,10 @@ if __name__ == "__main__":
         device = torch.device(f'cuda:{args.local_rank}')
     setup = dict(device=device, dtype=torch.float, non_blocking=forest.consts.NON_BLOCKING)
     torch.distributed.init_process_group(backend=forest.consts.DISTRIBUTED_BACKEND, init_method='env://')
-    args.ensemble = len(args.vnet)
+    if args.vnet == None:
+        args.ensemble = 1
+    else:
+        args.ensemble = len(args.vnet)
     
     if args.ensemble != 1 and args.ensemble != torch.distributed.get_world_size():
         raise ValueError('Argument given to ensemble does not match number of launched processes!')
@@ -72,13 +69,13 @@ if __name__ == "__main__":
     if args.skip_clean_training:
         if torch.distributed.get_rank() == 0: write('Skipping clean training...', args.output)
     else:
-        if torch.distributed.get_rank() == 0: write('Clean training model...', args.output)
-        model.train(data, max_epoch=args.max_epoch)
+        model.train(data, max_epoch=args.train_max_epoch)
     train_time = time.time()
     
+    print("Train time: ", str(datetime.timedelta(seconds=train_time - start_time)))
+    
     # Select poisons based on maximum gradient norm
-    if args.poison_selection_strategy != None and args.recipe != 'naive':
-        data.select_poisons(model, args.poison_selection_strategy)
+    data.select_poisons(model, args.poison_selection_strategy)
     
     # Print data status
     if torch.distributed.get_rank() == 0:
@@ -90,6 +87,8 @@ if __name__ == "__main__":
         poison_delta = None
         
     craft_time = time.time()
+    print("Craft time: ", str(datetime.timedelta(seconds=craft_time - train_time)))
+    
     # Optional: apply a filtering defense
     if args.filter_defense != '' and args.recipe != 'naive':
         if args.scenario == 'from-scratch':
@@ -125,6 +124,7 @@ if __name__ == "__main__":
             model.validate(data, poison_delta, val_max_epoch=args.val_max_epoch)
             
     test_time = time.time()
+    print("Test time: ", str(datetime.timedelta(seconds=test_time - craft_time)))
 
     if torch.distributed.get_rank() == 0:
         # Export

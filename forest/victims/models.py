@@ -22,7 +22,7 @@ def bypass_last_layer(model):
     headless_model = torch.nn.Sequential(*(layer_cake[:-1]), torch.nn.Flatten()).eval()  # this works most of the time all of the time :<
     return headless_model, last_layer
 
-def get_model(model_name, num_classes=8, pretrained=True):
+def get_model(model_name, num_classes=10, pretrained=True):
     """Get model instance (ResNet50, VGG16, DenseNet121)"""
     if model_name.lower() == 'resnet50':
         # model = models.resnet50(weights='DEFAULT')
@@ -32,13 +32,16 @@ def get_model(model_name, num_classes=8, pretrained=True):
         num_ftrs = model.fc.in_features
         model.fc = nn.Linear(in_features=num_ftrs, out_features=num_classes)   
     elif model_name.lower() == 'vgg16':
-        if pretrained:
-            model = vgg_face_dag(weights_path='pretrained/vgg_face_dag.pth')
-        else:
-            model = vgg_face_dag(weights_path=None)
+        model = models.vgg16(weights="DEFAULT" if pretrained else None)
+        model.classifier[6] = nn.Linear(in_features=4096, out_features=num_classes)
         
-        num_ftrs = model.fc8.in_features
-        model.fc8 = nn.Linear(in_features=num_ftrs, out_features=num_classes) 
+        # if pretrained:
+        #     model = vgg_face_dag(weights_path='pretrained/vgg_face_dag.pth')
+        # else:
+        #     model = vgg_face_dag(weights_path=None)
+        
+        # num_ftrs = model.fc8.in_features
+        # model.fc8 = nn.Linear(in_features=num_ftrs, out_features=num_classes) 
     elif model_name.lower() == 'densenet121':
         raise NotImplementedError('DenseNet121 not implemented')
     else:
@@ -326,5 +329,3 @@ def test_vgg_16(num_classes=10):
     tensor = torch.randn(1, 3, 224, 224)
     out1 = feature(tensor)
     out2 = feature_model(tensor)
-
-test_vgg_16()
