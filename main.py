@@ -14,7 +14,7 @@ from forest.consts import BENCHMARK, NUM_CLASSES
 torch.backends.cudnn.benchmark = BENCHMARK
 
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
-os.environ["CUDA_VISIBLE_DEVICES"]="0,2,3"
+os.environ["CUDA_VISIBLE_DEVICES"]="3,0"
 
 # Parse input arguments
 args = forest.options().parse_args()
@@ -23,13 +23,13 @@ args.output = f'outputs/{args.recipe}/{args.scenario}/{args.trigger}/{args.net[0
 os.makedirs(os.path.dirname(args.output), exist_ok=True)
 open(args.output, 'w').close() # Clear the output files
 
+torch.cuda.empty_cache()
 if args.deterministic:
     forest.utils.set_deterministic()
 
 if __name__ == "__main__":
     
     setup = forest.utils.system_startup(args) # Set up device and torch data type
-    torch.cuda.empty_cache()
     
     model = forest.Victim(args, num_classes=NUM_CLASSES, setup=setup) # Initialize model and loss_fn
     data = forest.Kettle(args, model.defs.batch_size, model.defs.augmentations,
@@ -42,7 +42,8 @@ if __name__ == "__main__":
     else:
         model.train(data, max_epoch=args.train_max_epoch)
     train_time = time.time()
-    print(str(datetime.timedelta(seconds=train_time - start_time)))
+    
+    print("Train time: ", str(datetime.timedelta(seconds=train_time - start_time)))
     
     # Select poisons based on maximum gradient norm
     data.select_poisons(model, args.poison_selection_strategy)
@@ -56,6 +57,8 @@ if __name__ == "__main__":
         poison_delta = None
         
     craft_time = time.time()
+    print("Craft time: ", str(datetime.timedelta(seconds=craft_time - train_time)))
+    
     # Optional: apply a filtering defense
     if args.filter_defense != '' and args.recipe != 'naive':
         if args.scenario == 'from-scratch':
@@ -91,6 +94,7 @@ if __name__ == "__main__":
             model.validate(data, poison_delta, val_max_epoch=args.val_max_epoch)
             
     test_time = time.time()
+    print("Test time: ", str(datetime.timedelta(seconds=test_time - craft_time)))
 
     # Export
     if args.save is not None and args.recipe != 'naive':

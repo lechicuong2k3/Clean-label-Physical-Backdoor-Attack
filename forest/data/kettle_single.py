@@ -127,6 +127,39 @@ class KettleSingle():
             write(f'--Poisons in partialset are {num_p_poisons} ({num_p_poisons/len(self.poison_target_ids):2.2%})', self.args.output)
         
         write("-" * 46 + "\n", self.args.output)
+        
+    def print_status(self):
+        target_class = self.poison_setup['poison_class']
+        target_label = self.class_names[target_class]
+        # Poison set-up
+        write("\n" + "-" * 15 + " Poisoning setup " + "-" * 15, self.args.output)
+        write(f"--Target/Poison class: {target_class} ({target_label})", self.args.output)
+        write(f'--Threat model: {self.args.threatmodel}', self.args.output)
+        if self.args.poison_selection_strategy != None: write(f'--Poison selection: {self.args.poison_selection_strategy}', self.args.output)
+        
+        if self.args.recipe != 'naive':
+            fraction_over_target = len(self.poison_target_ids)/len(self.trainset_distribution[target_class])
+            fraction_over_total = len(self.poison_target_ids)/len(self.trainset)
+            num_poisons = len(self.poison_target_ids)
+        else:
+            fraction_over_target, fraction_over_total, num_poisons = 0, 0, 0
+        write('--Alpha: {} images - {:.2%} of target-class trainset and {:.2%} of total trainset'.format(num_poisons, fraction_over_target, fraction_over_total), self.args.output)
+        write('--Beta: {} images - {:.2%} of target-class trainset\n'.format(self.bonus_num, self.args.beta), self.args.output)
+
+        # Source-class statistics
+        source_labels = [self.class_names[source_class] for source_class in self.poison_setup['source_class']]
+        source_labels = ",".join(map(str, source_labels))
+        source_classes = ",".join(map(str, self.poison_setup['source_class']))
+        write(f"--Source class: {source_classes} ({source_labels})", self.args.output)
+        write(f"--Attacker's source_trainset: {self.source_train_num} images", self.args.output)
+        write(f"--Attacker's source_testset: {self.source_test_num} images", self.args.output)
+        
+        if self.args.ablation < 1.0:
+            write(f'--Partialset is {len(self.partialset)/len(self.trainset):2.2%} of full training set', self.args.output)
+            num_p_poisons = len(np.intersect1d(self.poison_target_ids.cpu().numpy(), np.array(self.sample)))
+            write(f'--Poisons in partialset are {num_p_poisons} ({num_p_poisons/len(self.poison_target_ids):2.2%})', self.args.output)
+        
+        write("-" * 46 + "\n", self.args.output)
 
     def get_num_workers(self):
         """Check devices and set an appropriate number of workers."""
@@ -327,89 +360,105 @@ class KettleSingle():
 
     def select_poisons(self, victim, selection):
         """Select and initialize poison_target_ids, poisonset, poisonloader, poison_lookup, clean_ids."""
-        victim.eval(dropout=True)
-
-        write('\nSelecting poisons ...', self.args.output)
-
-        if self.args.source_criterion in ['cw', 'carlini-wagner']:
-            criterion = cw_loss
-        else:
-            criterion = torch.nn.CrossEntropyLoss()
-            
-        images = torch.stack([data[0] for data in self.poisonset], dim=0).to(**self.setup)
-        labels = torch.tensor([data[1] for data in self.poisonset]).to(device=self.setup['device'], dtype=torch.long)
-        poison_target_ids = torch.tensor([data[2] for data in self.poisonset], dtype=torch.long)
-            
-        if selection == None:
-            target_class = self.poison_setup['poison_class']
-            poison_num = ceil(np.ceil(self.args.alpha * len(self.trainset_distribution[target_class])))
-            indices = random.sample(self.trainset_distribution[target_class], poison_num)
-            
-        elif selection == 'max_gradient':
-            write('Selections strategy is {}'.format(selection), self.args.output)
-                
-            # single model
-            if self.args.ensemble == 1:
-                grad_norms = []
-                model = victim.model
-                differentiable_params = [p for p in model.parameters() if p.requires_grad]
-                for image, label in zip(images, labels):
-                    loss = criterion(model(image.unsqueeze(0)), label.unsqueeze(0))
-                    gradients = torch.autograd.grad(loss, differentiable_params, only_inputs=True)
-                    grad_norm = 0
-                    for grad in gradients:
-                        grad_norm += grad.detach().pow(2).sum()
-                    grad_norms.append(grad_norm.sqrt())
-            # ensemble models
-            else:
-                grad_norms_list = [[] for _ in range(len(victim.models))] 
-                for i, model in enumerate(victim.models):
-                    with GPUContext(self.setup, model) as model:
-                        differentiable_params = [p for p in model.parameters() if p.requires_grad]
-                        for image, label in zip(images, labels):
-                            loss = criterion(model(image.unsqueeze(0)), label.unsqueeze(0))
-                            gradients = torch.autograd.grad(loss, differentiable_params, only_inputs=True)
-                            grad_norm = 0
-                            for grad in gradients:
-                                grad_norm += grad.detach().pow(2).sum()
-                            grad_norms_list[i].append(grad_norm.sqrt())
-
-                write(f'Taking average gradient norm of ensemble of {len(victim.models)} models', self.args.output)
-                grad_norms = [sum(col) / float(len(col)) for col in zip(*grad_norms_list)]
-            
-            target_class = self.poison_setup['poison_class']
-            poison_num = ceil(np.ceil(self.args.alpha * len(self.trainset_distribution[target_class])))
-            indices = [i[0] for i in sorted(enumerate(grad_norms), key=lambda x:x[1])][-poison_num:]
-
-        else:
-            raise NotImplementedError('Poison selection {} strategy is not implemented yet!'.format(selection))
-
-        images = images[indices]
-        labels = labels[indices]
-        poison_target_ids = poison_target_ids[indices]
-        if self.rank == 0: write('{} poisons with maximum gradients selected'.format(len(indices)), self.args.output)
-
-        if self.rank == 0: write('Updating Kettle poison related fields ...', self.args.output)
-        self.poison_target_ids = poison_target_ids
-        if isinstance(self.trainset, ConcatDataset):
-            self.poisonset = Subset(self.trainset.datasets[0], indices=self.poison_target_ids)
-        else:
-            self.poisonset = Subset(self.trainset, indices=self.poison_target_ids)
-        self.poison_lookup = dict(zip(self.poison_target_ids.tolist(), range(poison_num)))
+        self.bonus_num = ceil(self.args.beta/(1-self.args.beta) * len(self.trainset_distribution[self.poison_setup['target_class']]))
+        if self.bonus_num > len(self.triggerset_dist[self.poison_setup['target_class']]):
+            self.bonus_num = len(self.triggerset_dist[self.poison_setup['target_class']])
+            self.args.beta = self.bonus_num/(self.bonus_num+len(self.trainset_distribution[self.poison_setup['target_class']]))
         
-        if self.args.pbatch == None:
-            self.poison_batch_size = len(self.poisonset)
-        else:
-            self.poison_batch_size = self.args.pbatch
-        
-        poison_sampler = torch.utils.data.distributed.DistributedSampler(
-            self.poisonset,
-            num_replicas=self.args.world_size,
-            rank=self.args.local_rank,
-        )
-        self.poisonloader = torch.utils.data.DataLoader(self.poisonset, batch_size=self.poison_batch_size, sampler=poison_sampler,
+        # Add bonus samples of target class with physical trigger (to enforce association between target class and trigger)
+        if self.args.beta > 0:
+            if self.rank == 0: write("Add {} bonus images of target class with physical trigger to training set.\n".format(self.bonus_num), self.args.output)
+            
+            # Sample bonus_num from target-class data of trigger trainset
+            bonus_indices = random.sample(self.triggerset_dist[self.poison_setup['target_class']], self.bonus_num)          
+            bonus_dataset = Subset(self.triggerset, bonus_indices, transform=copy.deepcopy(self.trainset.transform))
+            
+            # Overwrite trainset
+            self.trainset = ConcatDataset([self.trainset, bonus_dataset])  
+
+            self.trainloader = torch.utils.data.DataLoader(self.trainset, batch_size=self.batch_size, shuffle=True,
                                                         drop_last=False, num_workers=self.num_workers, pin_memory=PIN_MEMORY)
-        self.clean_ids = [idx for idx in range(len(self.trainset)) if self.poison_lookup.get(idx) is None]
+        elif self.args.recipe == 'naive':
+            raise ValueError('Naive recipe requires beta > 0!')
+        
+        if self.args.recipe != 'naive':
+            victim.eval(dropout=True)
+            write('\nSelecting poisons ...', self.args.output)
+
+            if self.args.source_criterion in ['cw', 'carlini-wagner']:
+                criterion = cw_loss
+            else:
+                criterion = torch.nn.CrossEntropyLoss()
+                
+            images = torch.stack([data[0] for data in self.poisonset], dim=0).to(**self.setup)
+            labels = torch.tensor([data[1] for data in self.poisonset]).to(device=self.setup['device'], dtype=torch.long)
+            poison_target_ids = torch.tensor([data[2] for data in self.poisonset], dtype=torch.long)
+                
+            if selection == None:
+                target_class = self.poison_setup['poison_class']
+                poison_num = ceil(np.ceil(self.args.alpha * len(self.trainset_distribution[target_class])))
+                indices = random.sample(self.trainset_distribution[target_class], poison_num)
+                
+            elif selection == 'max_gradient':
+                write('Selections strategy is {}'.format(selection), self.args.output)
+                    
+                # single model
+                if self.args.ensemble == 1:
+                    grad_norms = []
+                    model = victim.model
+                    differentiable_params = [p for p in model.parameters() if p.requires_grad]
+                    for image, label in zip(images, labels):
+                        loss = criterion(model(image.unsqueeze(0)), label.unsqueeze(0))
+                        gradients = torch.autograd.grad(loss, differentiable_params, only_inputs=True)
+                        grad_norm = 0
+                        for grad in gradients:
+                            grad_norm += grad.detach().pow(2).sum()
+                        grad_norms.append(grad_norm.sqrt())
+                # ensemble models
+                else:
+                    grad_norms_list = [[] for _ in range(len(victim.models))] 
+                    for i, model in enumerate(victim.models):
+                        with GPUContext(self.setup, model) as model:
+                            differentiable_params = [p for p in model.parameters() if p.requires_grad]
+                            for image, label in zip(images, labels):
+                                loss = criterion(model(image.unsqueeze(0)), label.unsqueeze(0))
+                                gradients = torch.autograd.grad(loss, differentiable_params, only_inputs=True)
+                                grad_norm = 0
+                                for grad in gradients:
+                                    grad_norm += grad.detach().pow(2).sum()
+                                grad_norms_list[i].append(grad_norm.sqrt())
+
+                    write(f'Taking average gradient norm of ensemble of {len(victim.models)} models', self.args.output)
+                    grad_norms = [sum(col) / float(len(col)) for col in zip(*grad_norms_list)]
+                
+                target_class = self.poison_setup['poison_class']
+                poison_num = ceil(np.ceil(self.args.alpha * len(self.trainset_distribution[target_class])))
+                indices = [i[0] for i in sorted(enumerate(grad_norms), key=lambda x:x[1])][-poison_num:]
+
+            else:
+                raise NotImplementedError('Poison selection {} strategy is not implemented yet!'.format(selection))
+
+            images = images[indices]
+            labels = labels[indices]
+            poison_target_ids = poison_target_ids[indices]
+            write('{} poisons with maximum gradients selected'.format(len(indices)), self.args.output)
+
+            write('Updating Kettle poison related fields ...', self.args.output)
+            self.poison_target_ids = poison_target_ids
+            if isinstance(self.trainset, ConcatDataset):
+                self.poisonset = Subset(self.trainset.datasets[0], indices=self.poison_target_ids)
+            else:
+                self.poisonset = Subset(self.trainset, indices=self.poison_target_ids)
+            self.poison_lookup = dict(zip(self.poison_target_ids.tolist(), range(poison_num)))
+            
+            if self.args.pbatch == None:
+                self.poison_batch_size = len(self.poisonset)
+            else:
+                self.poison_batch_size = self.args.pbatch
+            
+            self.poisonloader = torch.utils.data.DataLoader(self.poisonset, batch_size=self.poison_batch_size, shuffle=True,
+                                                            drop_last=False, num_workers=self.num_workers, pin_memory=PIN_MEMORY)
+            self.clean_ids = [idx for idx in range(len(self.trainset)) if self.poison_lookup.get(idx) is None]
     
     def construction(self):
         """Construct according to random selection.

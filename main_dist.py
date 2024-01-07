@@ -20,7 +20,7 @@ torch.cuda.empty_cache()
 # Parse input arguments
 args = forest.options().parse_args()
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
-os.environ["CUDA_VISIBLE_DEVICES"]="3,0,2"
+os.environ["CUDA_VISIBLE_DEVICES"]="0,3,2"
 args.local_rank = int(os.environ['LOCAL_RANK'])
 
 if not (torch.cuda.device_count() > 1):
@@ -54,7 +54,7 @@ if __name__ == "__main__":
         raise ValueError('Argument given to ensemble does not match number of launched processes!')
     else:
         args.world_size = torch.distributed.get_world_size()
-        if torch.distributed.get_rank() == 0:
+        if args.local_rank == 0:
             print(f'------------------------------- Currently evaluating on {args.recipe} -------------------------------')
             print(datetime.datetime.now().strftime("%A, %d. %B %Y %I:%M%p"))
             print(args)
@@ -67,7 +67,7 @@ if __name__ == "__main__":
 
     start_time = time.time()
     if args.skip_clean_training:
-        if torch.distributed.get_rank() == 0: write('Skipping clean training...', args.output)
+        if args.local_rank == 0: write('Skipping clean training...', args.output)
     else:
         model.train(data, max_epoch=args.train_max_epoch)
     train_time = time.time()
@@ -78,7 +78,7 @@ if __name__ == "__main__":
     data.select_poisons(model, args.poison_selection_strategy)
     
     # Print data status
-    if torch.distributed.get_rank() == 0:
+    if args.local_rank == 0:
         data.print_status()
 
     if args.recipe != 'naive':
@@ -126,7 +126,7 @@ if __name__ == "__main__":
     test_time = time.time()
     print("Test time: ", str(datetime.timedelta(seconds=test_time - craft_time)))
 
-    if torch.distributed.get_rank() == 0:
+    if args.local_rank == 0:
         # Export
         if args.save is not None and args.recipe != 'naive':
             data.export_poison(poison_delta, path=args.poison_path, mode=args.save)

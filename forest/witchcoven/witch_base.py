@@ -224,18 +224,6 @@ class _Witch():
                 if victim.rank == 0 or victim.rank == None: 
                     write(f'Iteration {step} | Poisoning learning rate: {lr} | Passenger loss: {source_losses:2.4f}', self.args.output)
                 
-            if step % 100 == 0 or step == (self.args.attackiter - 1):
-                adv_acc, adv_loss, clean_acc, clean_loss = check_sources(victim.model, victim.loss_fn, kettle.source_testloader, kettle.poison_setup['target_class'], victim.setup)
-                if victim.rank == 0 or  victim.rank == None: 
-                    write(f'\n---------------- Evaluation ---------------- ', self.args.output)
-                    for source_class in kettle.poison_setup['source_class']:
-                        if source_class != 'avg':
-                            write(f'Source class {source_class}:', self.args.output)
-                        else:
-                            write(f'Average:', self.args.output)
-                        write('Adv.  loss: {:.4f} | Adv.  acc: {:.4f}'.format(adv_loss[source_class], adv_acc[source_class]), self.args.output)
-                        write('Clean loss: {:.4f} | Clean acc: {:.4f}'.format(clean_loss[source_class], clean_acc[source_class]), self.args.output)
-
             # Default not to step 
             if self.args.step:
                 if self.args.clean_grad:
