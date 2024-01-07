@@ -95,7 +95,7 @@ class _Witch():
 
         optimal_score = torch.argmin(scores)
         self.stat_optimal_loss = scores[optimal_score].item()
-        if victim.rank == 0 or victim.rank == None:  write(f'Poisons with minimal passenger loss {self.stat_optimal_loss:6.4e} selected.', self.args.output)
+        if victim.rank == 0 or victim.rank == None:  write(f'Poisons with minimal passenger loss {self.stat_optimal_loss:6.4e} selected.\n', self.args.output)
         poison_delta = poisons[optimal_score]
 
         return poison_delta # Return the best poison perturbation amont the restarts
@@ -103,35 +103,38 @@ class _Witch():
 
     def _initialize_brew(self, victim, kettle):
         """Implement common initialization operations for brewing."""
-        victim.eval(dropout=True)
-        
-        self.sources_train = torch.stack([data[0] for data in kettle.source_trainset], dim=0).to(**self.setup)
-        self.sources_train_true_classes = torch.tensor([data[1] for data in kettle.source_trainset]).to(device=self.setup['device'], dtype=torch.long)
-        self.sources_train_target_classes = torch.tensor([kettle.poison_setup['poison_class']] * kettle.source_train_num).to(device=self.setup['device'], dtype=torch.long)
-
-        # Modify source grad for backdoor poisoning
-        _sources = self.sources_train
-        _true_classes= self.sources_train_true_classes
-        _target_classes = self.sources_train_target_classes
+        if self.args.recipe == 'label-consistent':
+            self.source_grad, self.source_gnorm, self.source_clean_grad = None, None, None
+        else:
+            victim.eval(dropout=True)
             
-        # Precompute source gradients
-        if self.args.source_criterion in ['cw', 'carlini-wagner']:
-            self.source_grad, self.source_gnorm = victim.gradient(_sources, _target_classes, cw_loss, selection=self.args.source_selection_strategy)
-        elif self.args.source_criterion in ['unsourceed-cross-entropy', 'unxent']:
-            self.source_grad, self.source_gnorm = victim.gradient(_sources, _true_classes, selection=self.args.source_selection_strategy)
-            for grad in self.source_grad:
-                grad *= -1
-        elif self.args.source_criterion in ['xent', 'cross-entropy']:
-            self.source_grad, self.source_gnorm = victim.gradient(_sources, _target_classes, selection=self.args.source_selection_strategy)
-        else:
-            raise ValueError('Invalid source criterion chosen ...')
-        if victim.rank == 0 or  victim.rank == None: 
-            write(f'Source Grad Norm is {self.source_gnorm}', self.args.output)
+            self.sources_train = torch.stack([data[0] for data in kettle.source_trainset], dim=0).to(**self.setup)
+            self.sources_train_true_classes = torch.tensor([data[1] for data in kettle.source_trainset]).to(device=self.setup['device'], dtype=torch.long)
+            self.sources_train_target_classes = torch.tensor([kettle.poison_setup['poison_class']] * kettle.source_train_num).to(device=self.setup['device'], dtype=torch.long)
 
-        if self.args.repel != 0:
-            self.source_clean_grad, _ = victim.gradient(_sources, _true_classes)
-        else:
-            self.source_clean_grad = None
+            # Modify source grad for backdoor poisoning
+            _sources = self.sources_train
+            _true_classes= self.sources_train_true_classes
+            _target_classes = self.sources_train_target_classes
+                
+            # Precompute source gradients
+            if self.args.source_criterion in ['cw', 'carlini-wagner']:
+                self.source_grad, self.source_gnorm = victim.gradient(_sources, _target_classes, cw_loss, selection=self.args.source_selection_strategy)
+            elif self.args.source_criterion in ['unsourceed-cross-entropy', 'unxent']:
+                self.source_grad, self.source_gnorm = victim.gradient(_sources, _true_classes, selection=self.args.source_selection_strategy)
+                for grad in self.source_grad:
+                    grad *= -1
+            elif self.args.source_criterion in ['xent', 'cross-entropy']:
+                self.source_grad, self.source_gnorm = victim.gradient(_sources, _target_classes, selection=self.args.source_selection_strategy)
+            else:
+                raise ValueError('Invalid source criterion chosen ...')
+            if victim.rank == 0 or  victim.rank == None: 
+                write(f'Source Grad Norm is {self.source_gnorm}', self.args.output)
+
+            if self.args.repel != 0:
+                self.source_clean_grad, _ = victim.gradient(_sources, _true_classes)
+            else:
+                self.source_clean_grad = None
 
         # The PGD tau that will actually be used:
         # This is not super-relevant for the adam variants
@@ -250,7 +253,7 @@ class _Witch():
                             victim.reinitialize_last_layer(reduce_lr_factor=FINETUNING_LR_DROP, keep_last_layer=True)
 
                     victim._iterate(kettle, poison_delta=poison_delta, max_epoch=self.args.retrain_max_epoch)
-                    if victim.rank == 0 or  victim.rank == None: 
+                    if victim.rank == 0 or victim.rank == None: 
                         write('Retraining done!\n', self.args.output)
                     self._initialize_brew(victim, kettle)
 

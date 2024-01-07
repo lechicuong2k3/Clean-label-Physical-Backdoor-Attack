@@ -20,7 +20,7 @@ torch.cuda.empty_cache()
 # Parse input arguments
 args = forest.options().parse_args()
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
-os.environ["CUDA_VISIBLE_DEVICES"]="0,3,2"
+os.environ["CUDA_VISIBLE_DEVICES"]="3,0,2"
 args.local_rank = int(os.environ['LOCAL_RANK'])
 
 if not (torch.cuda.device_count() > 1):

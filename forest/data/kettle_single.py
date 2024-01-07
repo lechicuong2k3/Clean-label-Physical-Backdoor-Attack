@@ -367,7 +367,7 @@ class KettleSingle():
         
         # Add bonus samples of target class with physical trigger (to enforce association between target class and trigger)
         if self.args.beta > 0:
-            if self.rank == 0: write("Add {} bonus images of target class with physical trigger to training set.\n".format(self.bonus_num), self.args.output)
+            write("Add {} bonus images of target class with physical trigger to training set.".format(self.bonus_num), self.args.output)
             
             # Sample bonus_num from target-class data of trigger trainset
             bonus_indices = random.sample(self.triggerset_dist[self.poison_setup['target_class']], self.bonus_num)          

@@ -103,7 +103,8 @@ class _VictimBase:
             write('Starting clean training with {} scenario ...'.format(self.args.scenario), self.args.output)
         
         save_path = os.path.join(self.args.model_savepath, "clean", f"{self.args.scenario}_{self.args.trigger}_{self.model_init_seed}_{self.args.train_max_epoch}.pth")
-            
+        print(save_path)
+        print(self.args.train_max_epoch)
         if self.args.dryrun == True or os.path.exists(save_path) == False:
             self._iterate(kettle, poison_delta=None, max_epoch=max_epoch) # Validate poison
             if self.args.dryrun == False:

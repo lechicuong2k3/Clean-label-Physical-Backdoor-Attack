@@ -62,7 +62,7 @@ class KettleDistributed():
         self.class_names = self.trainset.classes
         self.prepare_diff_data_augmentations(normalize=NORMALIZE) # Create self.dm, self.ds, self.augment
 
-        self.num_workers = 4 
+        self.num_workers = 3
         
         self.rank = torch.distributed.get_rank()
         
@@ -361,7 +361,7 @@ class KettleDistributed():
         
         # Add bonus samples of target class with physical trigger (to enforce association between target class and trigger)
         if self.args.beta > 0:
-            if self.rank == 0: write("Add {} bonus images of target class with physical trigger to training set.\n".format(self.bonus_num), self.args.output)
+            if self.rank == 0: write("Add {} bonus images of target class with physical trigger to training set.".format(self.bonus_num), self.args.output)
             
             # Sample bonus_num from target-class data of trigger trainset
             bonus_indices = random.sample(self.triggerset_dist[self.poison_setup['target_class']], self.bonus_num)          
