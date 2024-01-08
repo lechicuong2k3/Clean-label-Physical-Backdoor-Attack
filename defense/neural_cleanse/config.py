@@ -7,7 +7,8 @@ def list_of_str(values):
 
 def get_argument():
     parser = argparse.ArgumentParser()
-
+    
+    parser.add_argument('--f')
     # Directory option
     parser.add_argument("--checkpoints", type=str, default="../../checkpoints/")
     parser.add_argument("--data_root", type=str, default="../../datasets/Facial_recognition")

@@ -54,44 +54,43 @@ def outlier_detection(l1_norm_list, idx_mapping, opt):
 
 def main():
     opt = config.get_argument().parse_args()
-    for trigger in opt.triggers:
-        opt.trigger = trigger
-        result_path = os.path.join(opt.result, opt.defense_set, opt.attack_mode)
-        if not os.path.exists(result_path):
-            os.makedirs(result_path)
-        output_path = os.path.join(result_path, "{}.txt".format(opt.trigger))
+    trigger = 'sunglasses'
+    result_path = os.path.join(opt.result, opt.defense_set, opt.attack_mode)
+    if not os.path.exists(result_path):
+        os.makedirs(result_path)
+    output_path = os.path.join(result_path, "{}.txt".format(trigger))
+    if opt.to_file:
+        with open(output_path, "w+") as f:
+            f.write("Output for neural cleanse: {} - {}".format(opt.attack_mode, opt.defense_set) + "\n")
+
+    # init_mask = np.random.randn(1, opt.input_height, opt.input_width).astype(np.float32)
+    # init_pattern = np.random.randn(opt.input_channel, opt.input_height, opt.input_width).astype(np.float32)
+
+    init_mask = np.ones((1, opt.input_height, opt.input_width)).astype(np.float32)
+    init_pattern = np.ones((opt.input_channel, opt.input_height, opt.input_width)).astype(np.float32)
+    for test in range(opt.n_times_test):
+        print("Test {}:".format(test))
         if opt.to_file:
-            with open(output_path, "w+") as f:
-                f.write("Output for neural cleanse: {} - {}".format(opt.attack_mode, opt.defense_set) + "\n")
+            with open(output_path, "a+") as f:
+                f.write("-" * 30 + "\n")
+                f.write("Test {}:".format(str(test)) + "\n")
 
-        # init_mask = np.random.randn(1, opt.input_height, opt.input_width).astype(np.float32)
-        # init_pattern = np.random.randn(opt.input_channel, opt.input_height, opt.input_width).astype(np.float32)
+        masks = []
+        idx_mapping = {}
 
-        init_mask = np.ones((1, opt.input_height, opt.input_width)).astype(np.float32)
-        init_pattern = np.ones((opt.input_channel, opt.input_height, opt.input_width)).astype(np.float32)
-        for test in range(opt.n_times_test):
-            print("Test {}:".format(test))
-            if opt.to_file:
-                with open(output_path, "a+") as f:
-                    f.write("-" * 30 + "\n")
-                    f.write("Test {}:".format(str(test)) + "\n")
+        for target_label in range(opt.total_label):
+            print("----------------- Analyzing label: {} -----------------".format(target_label))
+            opt.target_label = target_label
+            recorder, opt = train(opt, init_mask, init_pattern)
 
-            masks = []
-            idx_mapping = {}
+            mask = recorder.mask_best
+            masks.append(mask)
+            idx_mapping[target_label] = len(masks) - 1
 
-            for target_label in range(opt.total_label):
-                print("----------------- Analyzing label: {} -----------------".format(target_label))
-                opt.target_label = target_label
-                recorder, opt = train(opt, init_mask, init_pattern)
-
-                mask = recorder.mask_best
-                masks.append(mask)
-                idx_mapping[target_label] = len(masks) - 1
-
-            l1_norm_list = torch.stack([torch.sum(torch.abs(m)) for m in masks])
-            print("{} labels found".format(len(l1_norm_list)))
-            print("Norm values: {}".format(l1_norm_list))
-            outlier_detection(l1_norm_list, idx_mapping, opt)
+        l1_norm_list = torch.stack([torch.sum(torch.abs(m)) for m in masks])
+        print("{} labels found".format(len(l1_norm_list)))
+        print("Norm values: {}".format(l1_norm_list))
+        outlier_detection(l1_norm_list, idx_mapping, opt)
 
 
 if __name__ == "__main__":

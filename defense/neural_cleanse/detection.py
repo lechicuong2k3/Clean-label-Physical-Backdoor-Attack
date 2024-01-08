@@ -8,9 +8,9 @@ from torch.utils.data import DataLoader
 import tqdm
 import os
 import torchvision.models as models
-from ...forest.data.datasets import data_transforms, ImageDataset
+from forest.data.datasets import data_transforms, ImageDataset
 import copy
-from ...forest import options
+from forest import options
 # Parse input arguments
 args = options().parse_args()
 
@@ -89,11 +89,11 @@ class RegressionModel(nn.Module):
             classifier = nn.DataParallel(classifier, device_ids = [0, 1])
         classifier = classifier.to(opt.device)
         # Load pretrained classifier
-        ckpt_folder = os.path.join(opt.checkpoints)
-        if not os.path.exists(ckpt_folder):
-            os.makedirs(ckpt_folder)
-        ckpt_path = os.path.join(ckpt_folder, "{}_{}_{}.pth".format(opt.model, opt.trigger, opt.scenario))
-        state_dict = torch.load(ckpt_path)
+        # ckpt_folder = os.path.join(opt.checkpoints)
+        # if not os.path.exists(ckpt_folder):
+        #     os.makedirs(ckpt_folder)
+        # ckpt_path = os.path.join(ckpt_folder, "{}_{}_{}.pth".format(opt.model, opt.trigger, opt.scenario))
+        state_dict = torch.load('/vinserver_user/21thinh.dd/FedBackdoor/source/checkpoint/model.pth')
         classifier.load_state_dict(state_dict)
         for param in classifier.parameters():
             param.requires_grad = False
@@ -167,10 +167,10 @@ def get_dataloader(opt):
 
     if opt.defense_set == "trainset":
         transform = copy.deepcopy(data_transforms['train']) # Since we do differential augmentation, we dont need to augment here
-        ds = ImageDataset(os.path.join('/vinserver_user/21thinh.dd/FedBackdoor/source/datasets/Facial_recognition_robust', args.trigger, 'train'), transform=transform)        
+        ds = ImageDataset(os.path.join('/vinserver_user/21thinh.dd/FedBackdoor/source/datasets/Facial_recognition_partial', args.trigger, 'train'), transform=transform)        
     elif opt.defense_set == "testset":
         transform = copy.deepcopy(data_transforms['test'])
-        ds = ImageDataset(os.path.join('/vinserver_user/21thinh.dd/FedBackdoor/source/datasets/Facial_recognition_robust', args.trigger, 'train'), transform=transform)
+        ds = ImageDataset(os.path.join('/vinserver_user/21thinh.dd/FedBackdoor/source/datasets/Facial_recognition_partial', args.trigger, 'train'), transform=transform)
     
     dataloader = torch.utils.data.DataLoader(ds, batch_size=opt.batch_size,
                                                        shuffle=False, drop_last=False, num_workers=8, pin_memory=True)
