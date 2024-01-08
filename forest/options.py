@@ -98,7 +98,7 @@ def options():
     parser.add_argument('--repel', default=0, type=float)
 
     # Validation behavior
-    parser.add_argument('--vruns', default=1, type=int, help='How often to re-initialize and check source after retraining')
+    parser.add_argument('--vruns', default=3, type=int, help='How often to re-initialize and check source after retraining')
     parser.add_argument('--vnet', default=None, type=lambda s: [str(item) for item in s.split(',')], help='Evaluate poison on this victim model. Defaults to --net')
     parser.add_argument('--retrain_from_init', action='store_true', help='Additionally evaluate by retraining on the same model initialization.')
     parser.add_argument('--skip_clean_training', action='store_true', help='Skip clean training. This is only suggested for attacks that do not depend on a clean model.')
@@ -128,7 +128,7 @@ def options():
     parser.add_argument('--sources_train_rate', default=1.0, type=float, help='Fraction of source_class trainset that can be selected crafting poisons')
     parser.add_argument('--sources_selection_rate', default=1.0, type=int, help='Fraction of sources to be selected for crafting poisons')
     parser.add_argument('--source_gradient_batch', default=None, type=int, help='Batch size for sources train gradient computing')
-    parser.add_argument('--val_max_epoch', default=40, type=int, help='Train only up to this epoch for final validation.')
+    parser.add_argument('--val_max_epoch', default=30, type=int, help='Train only up to this epoch for final validation.')
     parser.add_argument('--retrain_max_epoch', default=30, type=int, help='Train only up to this epoch for retraining during crafting.')
     parser.add_argument('--retrain_scenario', default='from-scratch', type=str, choices=['from-scratch', 'finetuning', 'transfer'], help='Scenario for retraining and evaluating on the poisoned dataset')
     parser.add_argument('--load_feature_repr', default=True, action='store_true', help='Load feature representation of the model trained on clean data')

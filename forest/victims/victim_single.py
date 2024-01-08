@@ -115,6 +115,7 @@ class _VictimSingle(_VictimBase):
             max_epoch = self.defs.epochs
 
         single_setup = (self.model, self.defs, self.optimizer, self.scheduler)
+        self.defs.epoch = max_epoch
         for self.epoch in range(1, max_epoch+1):
             run_step(kettle, poison_delta, self.epoch, *single_setup)
             if self.args.dryrun:

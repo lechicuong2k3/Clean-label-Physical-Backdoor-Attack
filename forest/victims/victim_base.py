@@ -135,6 +135,7 @@ class _VictimBase:
             self.initialize(seed)
 
             # Train new model
+            write("Validaion {} with seed {}...".format(run+1, seed), self.args.output)
             self._iterate(kettle, poison_delta=poison_delta, max_epoch=val_max_epoch)
 
     def eval(self, dropout=True):
