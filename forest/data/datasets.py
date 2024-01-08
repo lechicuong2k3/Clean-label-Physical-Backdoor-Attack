@@ -94,7 +94,7 @@ class Subset(torch.utils.data.Subset):
     def __getitem__(self, idx):
         if isinstance(idx, list):
             raise TypeError('Index cannot be a list')
-        return self.dataset[self.indices[idx]][0], self.dataset[self.indices[idx]][1], idx
+        return self.dataset[self.indices[idx]]
     
     def __getattr__(self, name):
         if name in self.__dict__:
@@ -108,6 +108,45 @@ class Subset(torch.utils.data.Subset):
         # So, we need to manually deepcopy the wrapped dataset or raise error when "__setstate__" is called. Here we choose the first solution.
         return Subset(copy.deepcopy(self.dataset), copy.deepcopy(self.indices), copy.deepcopy(self.transform))
 
+class PoisonDataset(torch.utils.data.Dataset):
+    def __init__(self, dataset, poison_delta, poison_lookup):
+        self.dataset = dataset
+        self.poison_delta = poison_delta
+        self.poison_lookup = poison_lookup
+
+    def __getitem__(self, idx):
+        (img, target, index) = self.dataset[idx]
+        lookup = self.poison_lookup.get(idx)
+        if lookup is not None:
+            img += self.poison_delta[lookup, :, :, :]
+        return (img, target, index)
+
+    def __len__(self):
+        return len(self.dataset)
+    
+    def __getattr__(self, name):
+        if name in self.__dict__:
+            return getattr(self, name)
+        """Call this only if all attributes of Subset are exhausted."""
+        return getattr(self.dataset, name)
+
+    def get_target(self, index):
+        """Return only the target and its id.
+
+        Args:
+            index (int): Index
+
+        Returns:
+            tuple: (target, idx) where target is class_index of the target class.
+
+        """
+        target = self.dataset.targets[index]
+
+        if self.dataset.target_transform is not None:
+            target = self.dataset.target_transform(target)
+
+        return target, index
+    
 class ConcatDataset(torch.utils.data.ConcatDataset):
     def __init__(self, datasets, transform=None):
         super().__init__(datasets)
@@ -136,11 +175,7 @@ class ConcatDataset(torch.utils.data.ConcatDataset):
             sample_idx = idx
         else:
             sample_idx = idx - self.cumulative_sizes[dataset_idx - 1]
-        try:
-            sample, target, idx = self.datasets[dataset_idx][sample_idx][0], self.datasets[dataset_idx][sample_idx][1], idx
-        except IndexError as e:
-            raise IndexError(f'Index {idx} out of range') from e
-        return sample, target, idx
+        return self.datasets[dataset_idx][sample_idx][0], self.datasets[dataset_idx][sample_idx][1], idx
     
     def __deepcopy__(self, memo):
         return ConcatDataset(copy.deepcopy(self.datasets), copy.deepcopy(self.transform))
@@ -218,10 +253,7 @@ class ImageDataset(DatasetFolder):
         Returns:
             tuple: (sample, target) where target is class_index of the target class.
         """
-        try:
-            path, target = self.samples[index]
-        except IndexError as e:
-            raise IndexError(f'Index {index} out of range') from e
+        path, target = self.samples[index]
         sample = self.loader(path)
 
         if self.transform is not None:
@@ -362,4 +394,50 @@ class EarlyStopping:
             self.trace_func(f'Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ...')
         torch.save(model.state_dict(), self.path)
         self.val_loss_min = val_loss
+        
+class TriggerSet(ImageDataset):
+    """Use for creating triggerset, epecially when the number of classes in triggerset is different from the original dataset.
+
+    Args:
+        torch (_type_): _description_
+    """
+    def __init__(
+        self,
+        root: str,
+        transform: Optional[Callable] = None,
+        target_transform: Optional[Callable] = None,
+        loader: Callable[[str], Any] = default_loader,
+        is_valid_file: Optional[Callable[[str], bool]] = None,
+        target_label: str | None = None,
+        exclude_target_class: bool = False,
+        trainset_class_to_idx: Dict[str, int] | None = None,
+    ):  
+        self.trainset_class_to_idx = trainset_class_to_idx
+        super().__init__(
+            root,
+            transform,
+            target_transform,
+            loader,
+            is_valid_file,
+            target_label,
+            exclude_target_class,
+        )
+        
+    def find_classes(self, directory: str) -> Tuple[List[str], Dict[str, int]]:
+        """Finds the class folders in a dataset.
+
+        See :class:`DatasetFolder` for details.
+        """
+        classes = sorted(entry.name for entry in os.scandir(directory) if entry.is_dir())
+        if not classes:
+            raise FileNotFoundError(f"Couldn't find any class folder in {directory}.")
+                
+        class_to_idx = {}
+        for class_name in classes:
+            class_to_idx[class_name] = self.trainset_class_to_idx[class_name]
+            
+        if self.exclude_target_class:
+            class_to_idx.pop(self.target_label)
+            classes.remove(self.target_label)
+        return classes, class_to_idx
     

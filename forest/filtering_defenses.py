@@ -1,13 +1,26 @@
 import torch
 import numpy as np
+import defense.cleansers.robust_estimation as robust_estimation
+from forest.utils import write
+import random
+from .data.datasets import Subset, PoisonDataset
+from tqdm import tqdm
+import copy
+from .consts import NON_BLOCKING
 
 def get_defense(args):
-    if args.filter_defense.lower() == 'madry':
-        return _MadryDefense
-    elif args.filter_defense.lower() == 'deepknn':
+    if args.defense.lower() == 'spectral_signature':
+        return _SpectralSignature
+    elif args.defense.lower() == 'deepknn':
         return _DeepKNN
-    elif args.filter_defense.lower() == 'activation_clustering':
+    elif args.defense.lower() == 'activation_clustering':
         return _ActivationClustering
+    elif args.defense.lower() == 'spectre':
+        return _Spectre
+    elif args.defense.lower() == 'strip':
+        return _Strip
+    elif args.defense.lower() == 'neural_cleanse':
+        return _NeuralCleanse
 
 def _get_poisoned_features(kettle, victim, poison_delta, dryrun=False):
     class_indices = [[] for _ in range(len(kettle.class_names))]
@@ -25,8 +38,8 @@ def _get_poisoned_features(kettle, victim, poison_delta, dryrun=False):
             if dryrun and i == 3:  # use a few values to populate these adjancency matrices
                 break
     return feats, class_indices
-
-def _DeepKNN(kettle, victim, poison_delta, overestimation_factor=2.0):
+    
+def _DeepKNN(kettle, victim, poison_delta, args, num_classes=10, overestimation_factor=2.0):
     """deepKNN as in Peri et al. "Deep k-NN Defense against Clean-label Data Poisoning Attacks".
 
     An overestimation factor of 2 is motivated as necessary in that work."""
@@ -56,7 +69,7 @@ def _DeepKNN(kettle, victim, poison_delta, overestimation_factor=2.0):
     return clean_indices
 
 
-def _MadryDefense(kettle, victim, poison_delta, overestimation_factor=1.5):
+def _SpectralSignature(kettle, victim, poison_delta, args, num_classes =10, overestimation_factor=1.5):
     """The spectral signature defense proposed by Tran et al. in "Spectral Signatures in Backdoor Attacks"
 
     https://proceedings.neurips.cc/paper/2018/file/280cf18baf4311c92aa5a042336587d3-Paper.pdf
@@ -90,7 +103,7 @@ def _MadryDefense(kettle, victim, poison_delta, overestimation_factor=1.5):
             clean_indices = clean_indices + clean
     return clean_indices
 
-def _ActivationClustering(kettle, victim, poison_delta, clusters=2):
+def _ActivationClustering(kettle, victim, poison_delta, args, num_classes=10, clusters=2):
     """This is Chen et al. "Detecting Backdoor Attacks on Deep Neural Networks by Activation Clustering" """
     # lazy sklearn import:
     from sklearn.cluster import KMeans
@@ -112,3 +125,230 @@ def _ActivationClustering(kettle, victim, poison_delta, clusters=2):
                     clean.append(class_indices[i][idx])
             clean_indices = clean_indices + clean
     return clean_indices
+
+def _Spectre(kettle, victim, poison_delta, args, num_classes=10):
+    feats, class_indices = _get_poisoned_features(kettle, victim, poison_delta, dryrun=kettle.args.dryrun)
+
+    suspicious_indices = []
+    # Spectral Signature requires an expected poison ratio (we allow the oracle here as a baseline)
+    # calculate number of image in target class in data.trainset
+    budget = int(args.raw_poison_rate * len(kettle.trainset_distribution[kettle.poison_setup['poison_class']]) * 1.5)
+    # allow removing additional 50% (following the original paper)
+
+    max_dim = 2 # 64
+    class_taus = []
+    class_S = []
+    for i in range(num_classes):
+
+        if len(class_indices[i]) > 1:
+
+            # feats for class i in poisoned set
+            temp_feats = np.array([feats[temp_idx].squeeze(0).cpu().numpy() for temp_idx in class_indices[i]])
+            temp_feats = torch.FloatTensor(temp_feats).cuda()
+            temp_clean_feats = None
+
+            temp_feats = temp_feats - temp_feats.mean(dim=0) # centered data
+            temp_feats = temp_feats.T # feats arranged in column
+            U, _, _ = torch.svd(temp_feats)
+            U = U[:, :max_dim]
+
+            # full projection
+            projected_feats = torch.matmul(U.T, temp_feats)
+
+            max_tau = -999999
+            best_n_dim = -1
+            best_to_be_removed = None
+
+            for n_dim in range(2, max_dim+1): # enumarate all possible "reudced dimensions" and select the best
+
+                S_removed, S_left = SPECTRE(U, temp_feats, n_dim, budget, temp_clean_feats)
+
+                left_feats = projected_feats[:, S_left]
+                covariance = torch.cov(left_feats)
+
+                L, V = torch.linalg.eig(covariance)
+                L, V = L.real, V.real
+                L = (torch.diag(L) ** (1 / 2) + 0.001).inverse()
+                normalizer = torch.matmul(V, torch.matmul(L, V.T))
+
+                whitened_feats = torch.matmul(normalizer, projected_feats)
+
+                tau = QUEscore(whitened_feats, max_dim).mean()
+
+                if tau > max_tau:
+                    max_tau = tau
+                    best_n_dim = n_dim
+                    best_to_be_removed = S_removed
+
+
+            # print('class=%d, dim=%d, tau=%f' % (i, best_n_dim, max_tau))
+
+            class_taus.append(max_tau)
+
+            suspicious_indices = []
+            for temp_index in best_to_be_removed:
+                suspicious_indices.append(class_indices[i][temp_index])
+
+            class_S.append(suspicious_indices)
+
+    class_taus = np.array(class_taus)
+    median_tau = np.median(class_taus)
+
+    #print('median_tau : %d' % median_tau)
+    suspicious_indices = []
+    max_tau = -99999
+    for i in range(num_classes):
+        #if class_taus[i] > max_tau:
+        #    max_tau = class_taus[i]
+        #    suspicious_indices = class_S[i]
+        #print('class-%d, tau = %f' % (i, class_taus[i]))
+        #if class_taus[i] > 2*median_tau:
+        #    print('[large tau detected] potential poisons! Apply Filter!')
+        for temp_index in class_S[i]:
+            suspicious_indices.append(temp_index)
+    # create clean set
+    clean_indices = list(set(range(len(kettle.trainset))) - set(suspicious_indices))
+
+    return clean_indices
+
+def QUEscore(temp_feats, n_dim):
+
+    n_samples = temp_feats.shape[1]
+    alpha = 4.0
+    Sigma = torch.matmul(temp_feats, temp_feats.T) / n_samples
+    I = torch.eye(n_dim).cuda()
+    Q = torch.exp((alpha * (Sigma - I)) / (torch.linalg.norm(Sigma, ord=2) - 1))
+    trace_Q = torch.trace(Q)
+
+    taus = []
+    for i in range(n_samples):
+        h_i = temp_feats[:, i:i + 1]
+        tau_i = torch.matmul(h_i.T, torch.matmul(Q, h_i)) / trace_Q
+        tau_i = tau_i.item()
+        taus.append(tau_i)
+    taus = np.array(taus)
+
+    return taus
+
+def SPECTRE(U, temp_feats, n_dim, budget, oracle_clean_feats=None):
+
+    projector = U[:, :n_dim].T # top left singular vectors
+    temp_feats = torch.matmul(projector, temp_feats)
+
+    if oracle_clean_feats is None:
+        estimator = robust_estimation.BeingRobust(random_state=0, keep_filtered=True).fit((temp_feats.T).cpu().numpy())
+        clean_mean = torch.FloatTensor(estimator.location_).cuda()
+        filtered_feats = (torch.FloatTensor(estimator.filtered_).cuda() - clean_mean).T
+        clean_covariance = torch.cov(filtered_feats)
+    else:
+        clean_feats = torch.matmul(projector, oracle_clean_feats)
+        clean_covariance = torch.cov(clean_feats)
+        clean_mean = clean_feats.mean(dim = 1)
+
+
+    temp_feats = (temp_feats.T - clean_mean).T
+
+    # whiten the data
+    L, V = torch.linalg.eig(clean_covariance)
+    L, V = L.real, V.real
+    L = (torch.diag(L)**(1/2)+0.001).inverse()
+    normalizer = torch.matmul(V, torch.matmul( L, V.T ) )
+    temp_feats = torch.matmul(normalizer, temp_feats)
+
+    # compute QUEscore
+    taus = QUEscore(temp_feats, n_dim)
+
+    sorted_indices = np.argsort(taus)
+    n_samples = len(sorted_indices)
+
+    budget = min(budget, n_samples//2) # default assumption : at least a half of samples in each class is clean
+
+    suspicious = sorted_indices[-budget:]
+    left = sorted_indices[:n_samples-budget]
+
+    return suspicious, left
+
+def split_testset(clean_testset, clean_budget, defense_transform=None):
+    "Create a small clean test set for defense"
+    if clean_budget <= 0.5:
+        num_defense = int(clean_budget * len(clean_testset))
+    else:
+        raise NotImplementedError('Clean Budget must not be greater than 0.5')
+    
+    defense_indices = random.sample(range(len(clean_testset)), num_defense)
+    remain_indices = list(set(range(len(clean_testset))) - set(defense_indices))
+    
+    defense_set = Subset(dataset=clean_testset, indices=defense_indices, transform=defense_transform)
+    test_set = Subset(dataset=clean_testset, indices=remain_indices)
+    return defense_set, test_set
+    
+def _Strip(kettle, victim, poison_delta, args, num_classes=10):
+    strip_alpha = 1.0
+    N = 100
+    defense_fpr = 0.1
+    batch_size = 64
+    def check(_input, _label, source_set, model):
+        _list = []
+
+        samples = list(range(len(source_set)))
+        random.shuffle(samples)
+        samples = samples[:N]
+
+        with torch.no_grad():
+
+            for i in samples:
+                X, _, _ = source_set[i]
+                X = X.to(**kettle.setup)
+                _test = superimpose(_input, X)
+                entro = entropy(_test, model).cpu().detach()
+                _list.append(entro)
+                # _class = self.model.get_class(_test)
+
+        return torch.stack(_list).mean(0)
+
+    def superimpose(_input1, _input2, alpha = None):
+        if alpha is None:
+            alpha = strip_alpha
+
+        result = _input1 + alpha * _input2
+        return result
+
+    def entropy(_input, model) -> torch.Tensor:
+        # p = self.model.get_prob(_input)
+        p = torch.nn.Softmax(dim=1)(model(_input)) + 1e-8
+        return (-p * p.log()).sum(1)
+    
+    # choose a decision boundary with the test set
+    inspection_set = PoisonDataset(dataset=kettle.trainset, poison_delta=poison_delta, poison_lookup=kettle.poison_lookup)
+    clean_entropy = []
+    clean_set_loader = torch.utils.data.DataLoader(kettle.defenseset, batch_size=batch_size, shuffle=False)
+    for _input, _label, _ in tqdm(clean_set_loader):
+        _input, _label = _input.to(**kettle.setup), _label.to(dtype=torch.long, device=kettle.setup['device'], non_blocking=NON_BLOCKING)
+        entropies = check(_input, _label, kettle.defenseset, victim.model)
+        for e in entropies:
+            clean_entropy.append(e)
+    clean_entropy = torch.FloatTensor(clean_entropy)
+
+    clean_entropy, _ = clean_entropy.sort()
+    
+    threshold_low = float(clean_entropy[int(defense_fpr * len(clean_entropy))])
+    threshold_high = np.inf
+
+    # now cleanse the inspection set with the chosen boundary
+    inspection_set_loader = torch.utils.data.DataLoader(inspection_set, batch_size=batch_size, shuffle=False)
+    all_entropy = []
+    for _input, _label, _ in tqdm(inspection_set_loader):
+        _input, _label = _input.to(**kettle.setup), _label.to(dtype=torch.long, device=kettle.setup['device'], non_blocking=NON_BLOCKING)
+        entropies = check(_input, _label, kettle.defenseset, victim.model)
+        for e in entropies:
+            all_entropy.append(e)
+    all_entropy = torch.FloatTensor(all_entropy)
+
+    suspicious_indices = torch.logical_or(all_entropy < threshold_low, all_entropy > threshold_high).nonzero().reshape(-1)
+    
+    clean_indices = list(set(range(len(kettle.trainset))) - set(suspicious_indices))
+
+    return clean_indices
+
+def _NeuralCleanse(kettle, victim, poison_delta, args, num_classes=10):
+    pass

@@ -1,24 +1,20 @@
 """Single model default victim class."""
-
-from numpy.lib.type_check import imag
 import torch
 import numpy as np
 import warnings
 from math import ceil
 
-from collections import defaultdict
 import copy
 
 from .models import get_model
 from .training import get_optimizers, run_step
 from ..hyperparameters import training_strategy
 from ..utils import set_random_seed, write
-from ..consts import BENCHMARK
+from ..consts import BENCHMARK, SHARING_STRATEGY, FINETUNING_LR_DROP
 torch.backends.cudnn.benchmark = BENCHMARK
+torch.multiprocessing.set_sharing_strategy(SHARING_STRATEGY)
 
 from .victim_base import _VictimBase
-
-FINETUNING_LR_DROP = 0.001
 
 class _VictimSingle(_VictimBase):
     """Implement model-specific code and behavior for a single model on a single GPU.
@@ -29,24 +25,26 @@ class _VictimSingle(_VictimBase):
 
     def initialize(self, seed=None):
         """Set seed and initialize model, optimizer, scheduler"""
-        if self.args.model_seed is None:
-            if seed is None:
+        if seed is None:
+            if self.args.model_seed is None:
                 self.model_init_seed = np.random.randint(0, 2**32 - 1)
             else:
-                self.model_init_seed = seed
+                self.model_init_seed = self.args.model_seed
         else:
-            self.model_init_seed = self.args.model_seed
+            self.model_init_seed = seed
             
         set_random_seed(self.model_init_seed)
         self._initialize_model(self.args.net[0], mode=self.args.scenario)
         self.epoch = 1
 
         self.model.to(**self.setup)
-        if torch.cuda.device_count() > 1:
+        if self.setup['device'] == 'cpu' and torch.cuda.device_count() > 1:
             self.model = torch.nn.DataParallel(self.model)
             self.model.frozen = self.model.module.frozen
         write(f'{self.args.net[0]} model initialized with random key {self.model_init_seed}.', self.args.output)
+        print(f'{self.args.net[0]} model initialized with random key {self.model_init_seed}.')
         write(repr(self.defs), self.args.output)
+        print(repr(self.defs))
 
     def reinitialize_last_layer(self, reduce_lr_factor=1.0, seed=None, keep_last_layer=False):
         if not keep_last_layer:
@@ -62,13 +60,18 @@ class _VictimSingle(_VictimBase):
             # We construct a full replacement model, so that the seed matches up with the initial seed,
             # even if all of the model except for the last layer will be immediately discarded.
             replacement_model = get_model(self.args.net[0], pretrained=True)
-
-            # Rebuild model with new last layer
-            frozen = self.model.frozen
-            self.model = torch.nn.Sequential(*list(self.model.children())[:-1], torch.nn.Flatten(), list(replacement_model.children())[-1])
-            self.model.frozen = frozen
+            
+            if isinstance(self.model, torch.nn.DataParallel) or isinstance(self.model, torch.nn.parallel.DistributedDataParallel):
+                frozen = self.model.module.frozen
+                self.model = torch.nn.Sequential(*list(self.model.module.children())[:-1], torch.nn.Flatten(), list(replacement_model.children())[-1])
+            else:
+                # Rebuild model with new last layer
+                frozen = self.model.frozen
+                self.model = torch.nn.Sequential(*list(self.model.children())[:-1], torch.nn.Flatten(), list(replacement_model.children())[-1])
+            
+            self.model.frozen = frozen  
             self.model.to(**self.setup)
-            if torch.cuda.device_count() > 1:
+            if self.setup['device'] == 'cpu'and torch.cuda.device_count() > 1:
                 self.model = torch.nn.DataParallel(self.model)
                 self.model.frozen = self.model.module.frozen
 
@@ -82,12 +85,21 @@ class _VictimSingle(_VictimBase):
 
     def freeze_feature_extractor(self):
         """Freezes all parameters and then unfreeze the last layer."""
-        self.model.frozen = True
-        for param in self.model.parameters():
-            param.requires_grad = False
- 
-        for param in list(self.model.children())[-1].parameters():
-            param.requires_grad = True
+        if isinstance(self.model, torch.nn.DataParallel) or isinstance(self.model, torch.nn.parallel.DistributedDataParallel):
+            self.model.module.frozen = True
+            for param in self.model.module.parameters():
+                param.requires_grad = False
+    
+            for param in list(self.model.module.children())[-1].parameters():
+                param.requires_grad = True
+        
+        else:
+            self.model.frozen = True
+            for param in self.model.parameters():
+                param.requires_grad = False
+    
+            for param in list(self.model.children())[-1].parameters():
+                param.requires_grad = True
 
     def save_feature_representation(self):
         self.clean_model = copy.deepcopy(self.model)
@@ -114,11 +126,11 @@ class _VictimSingle(_VictimBase):
         run_step(kettle, poison_delta, self.epoch, *single_setup)
         self.epoch += 1
         if self.epoch > self.defs.epochs + 1:
-            self.epoch = 0
+            self.epoch = 1
             write('Model reset to epoch 0.', self.args.output)
             self._initialize_model(self.args.net[0], mode=self.args.scenario)
             self.model.to(**self.setup)
-            if torch.cuda.device_count() > 1:
+            if self.setup['device'] == 'cpu' and torch.cuda.device_count() > 1:
                 self.model = torch.nn.DataParallel(self.model)
                 self.model.frozen = self.model.module.frozen
 
@@ -162,7 +174,7 @@ class _VictimSingle(_VictimBase):
             write('{} sources with maximum gradients selected'.format(source_poison_selected), self.args.output)
 
         # Using batch processing for gradients
-        if self.args.source_gradient_batch != None or self.args.source_gradient_batch < images.shape[0]:
+        if self.args.source_gradient_batch != None:
             batch_size = self.args.source_gradient_batch
             if images.shape[0] < batch_size:
                 batch_size = images.shape[0]

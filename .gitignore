@@ -1,12 +1,10 @@
 datasets
-old_verson
+old_version
 __pycache__
-__init__.py
 pretrained
 *.ipynb
 idea_1
 idea_2
-*.png
 *.txt
-*.sh
 *.npz
+*.pth

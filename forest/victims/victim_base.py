@@ -1,13 +1,13 @@
 """Base victim class."""
 
 import torch
-
+import os
+import numpy as np
 from .models import get_model
 from .training import get_optimizers
 from ..hyperparameters import training_strategy
-from ..utils import average_dicts, write
-
-FINETUNING_LR_DROP = 0.001
+from ..utils import write
+from ..consts import FINETUNING_LR_DROP
 
 class _VictimBase:
     """Implement model-specific code and behavior.
@@ -38,17 +38,18 @@ class _VictimBase:
 
     def __init__(self, args, num_classes=10, setup=dict(device=torch.device('cpu'), dtype=torch.float)):
         """Initialize empty victim."""
-        self.args, self.setup = args, setup
+        self.args, self.setup, self.num_classes  = args, setup, num_classes
         if self.args.ensemble < len(self.args.net):
             raise ValueError(f'More models requested than ensemble size.'
                              f'Increase ensemble size or reduce models.')
+        self.rank = None
         self.loss_fn = torch.nn.CrossEntropyLoss()
-        self.num_classes = num_classes
         self.initialize()
 
     def gradient(self, images, labels):
         """Compute the gradient of criterion(model) w.r.t to given data."""
         raise NotImplementedError()
+        return grad, grad_norm
 
     def compute(self, function):
         """Compute function on all models.
@@ -87,18 +88,38 @@ class _VictimBase:
     def load_feature_representation(self):
         raise NotImplementedError()
 
+    def save_model(self, path):
+        """Save model to path."""
+        if isinstance(self.model, torch.nn.DataParallel) or isinstance(self.model, torch.nn.parallel.DistributedDataParallel):
+            torch.save(self.model.module.state_dict(), path)
+        else:
+            torch.save(self.model.state_dict(), path)
 
     """ METHODS FOR (CLEAN) TRAINING AND TESTING OF BREWED POISONS"""
 
     def train(self, kettle, max_epoch=None):
         """Clean (pre)-training of the chosen model, no poisoning involved."""
             
-        write('Starting clean training with {} scenario ...'.format(self.args.scenario), self.args.output)
-        self._iterate(kettle, poison_delta=None, max_epoch=max_epoch) # Validate poison
+        if self.rank == None or self.rank == 0: 
+            write('Starting clean training with {} scenario ...'.format(self.args.scenario), self.args.output)
+        
+        save_path = os.path.join(self.args.model_savepath, self.args.net[0].upper(), "clean", f"{self.args.scenario}_{self.args.trigger}_{self.model_init_seed}_{self.args.train_max_epoch}.pth")
+        if self.args.dryrun == True or os.path.exists(save_path) == False:
+            self._iterate(kettle, poison_delta=None, max_epoch=max_epoch) # Validate poison
+            if self.args.dryrun == False:
+                os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                self.save_model(save_path)
+        else: 
+            if self.rank == None or self.rank == 0: 
+                write('Model already exists, skipping training.', self.args.output)
+            if self.rank == None:
+                self.model.load_state_dict(torch.load(save_path))
+            else:
+                self.model.module.load_state_dict(torch.load(save_path))
         
         if self.args.load_feature_repr:
             self.save_feature_representation()
-            write('Feature representation saved.', self.args.output)
+            if self.rank == None or self.rank == 0: write('Feature representation saved.', self.args.output)
             
     def retrain(self, kettle, poison_delta, max_epoch=None):
         """Retrain with the same initialization on dataset with poison added."""
@@ -110,7 +131,8 @@ class _VictimBase:
 
         for run in range(self.args.vruns):
             # Reinitalize model with new seed
-            self.initialize()
+            seed = np.random.randint(0, 2**32 - 1)
+            self.initialize(seed)
 
             # Train new model
             self._iterate(kettle, poison_delta=poison_delta, max_epoch=val_max_epoch)
@@ -134,6 +156,7 @@ class _VictimBase:
             pretrained = True
         self.model = get_model(model_name, num_classes=self.num_classes, pretrained=pretrained)
         self.model.frozen = False
+        
         # Define training routine
         self.defs = training_strategy(model_name, self.args) # Initialize hyperparameters for training
         if mode == 'finetuning':

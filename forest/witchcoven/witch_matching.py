@@ -1,14 +1,9 @@
 """Main class, holding information about models and training/testing routines."""
 
-import random
 import torch
-import random
-import torchvision
-from PIL import Image
 from ..consts import BENCHMARK, NON_BLOCKING
 from ..utils import bypass_last_layer, cw_loss
 from ..victims.training import _split_data
-from forest.data import datasets
 torch.backends.cudnn.benchmark = BENCHMARK
 from .witch_base import _Witch
 
