@@ -5,7 +5,6 @@ pretrained
 *.ipynb
 idea_1
 idea_2
-*.txt
 *.npz
 *.pth
 *.png

@@ -2,6 +2,7 @@
 
 import torch
 import torchvision
+import os
 from PIL import Image
 from ..utils import bypass_last_layer, cw_loss, write
 from ..consts import BENCHMARK, NON_BLOCKING, FINETUNING_LR_DROP
@@ -16,10 +17,26 @@ class WitchCLP(_Witch):
     discriminative features of both classes. Then use HTBA to shift the feature representations of poisoned samples (target samples
     with trigger) closer to the feature representations of source samples with trigger.
     '''
-    def trigger_selection(self, victim, kettle):
-        """This function finds the best trigger for the poisonkey"""
-        finetune_set = kettle.trigger_trainset_dist[kettle.poison_setup['source_class']]
-         
+    def trigger_selection(self, model, kettle):
+        """This function finds the best trigger for the poisonkey
+        The strategy is using trained model to compute cross-entropy loss on triggered samples from source class.
+        Args:
+            add_triggered_targets: Whether to add triggered targets to the 
+        """
+        sample_size = 100 # Sample size to draw from
+        target_class = kettle.poison_setup['target_class']
+        loss_fn = torch.nn.CrossEntropyLoss()
+        test_transform = copy.deepcopy(kettle.validset.transform)
+        indices = []
+        for trigger in os.listdir(self.args.dataset):
+            triggerset = datasets.TriggerSet(os.path.join(self.args.dataset, trigger), transform=test_transform)
+            triggerset_dist = kettle.class_distribution(triggerset)
+            source_trigger_idcs = []
+            for source in kettle.poison_setup['source_class']:
+                source_ids = random.sample(triggerset_dist[source], sample_size)
+                source_trigger_idcs.extend()
+            source_triggerset = triggerset
+        
     
     def backdoor_finetuning(self, victim, kettle):
         '''Finetuning the clean_model on backdoor dataset containing triggered samples from source class and target class'''
