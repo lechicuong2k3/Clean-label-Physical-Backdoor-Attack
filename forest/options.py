@@ -15,7 +15,7 @@ def options():
     parser.add_argument('--f')
     # Central:
     parser.add_argument('--net', default='ResNet50', type=lambda s: [str(item) for item in s.split(',')])
-    parser.add_argument('--dataset', default='datasets/Facial_recognition_robust', type=str, choices=['Facial_recognition', 'Object_detection'])
+    parser.add_argument('--dataset', default='datasets/Facial_recognition_partial', type=str, choices=['Facial_recognition', 'Object_detection'])
     parser.add_argument('--recipe', default='gradient-matching', type=str, choices=['gradient-matching', 'gradient-matching-private', 
                                                                                     'hidden-trigger', 'hidden-trigger-mt' 'gradient-matching-mt',
                                                                                     'patch', 'gradient-matching-hidden', 'naive', 'label-consistent'])
@@ -115,8 +115,9 @@ def options():
     parser.add_argument('--cache_dataset', action='store_true', help='Cache the entire thing :>')
 
     # Debugging:
-    parser.add_argument('--dryrun', action='store_true', help='This command runs every loop only a single time.')
+    parser.add_argument('--dryrun', default=False, action='store_true', help='This command runs every loop only a single time.')
     parser.add_argument('--save', default=None, help='Export poisons into a given format. Options are full/limited/numpy.')
+    parser.add_argument('--test', default=False, action='store_true', help='Save experimental results to a separate test folder')
     
     # Distributed Computations
     parser.add_argument("--local_rank", default=None, type=int, help='Distributed rank. This is an INTERNAL ARGUMENT! '
@@ -139,6 +140,7 @@ def options():
     parser.add_argument('--source_selection_strategy', default=None, type=str, choices=['max_gradient', 'max_loss'], help='sources_train_rate selection strategy')
     parser.add_argument('--poison_selection_strategy', default="max_gradient", type=str, choices=['max_gradient', 'max_loss'], help='Poison selection strategy')
     parser.add_argument('--raw_poison_rate', default=1.0, type=float, help='Fraction of target_class dataset that CAN BE SELECTED as poisons')
+    parser.add_argument('--poison_triggered_sample', default=False, action='store_true', help='Poison samples from poison class with physical trigger')
     
     # Poison properties / controlling the strength of the attack:
     parser.add_argument('--eps', default=16, type=float, help='Epsilon bound of the attack in a ||.||_p norm. p=Inf for all recipes except for "patch".')

@@ -25,8 +25,13 @@ class WitchHTBD(_Witch):
             else:
                 att_optimizer = torch.optim.SGD([poison_delta], lr=self.tau0, momentum=0.9, weight_decay=0)
             if self.args.scheduling:
-                scheduler = torch.optim.lr_scheduler.MultiStepLR(att_optimizer, milestones=[self.args.attackiter // 2.667, self.args.attackiter // 1.6,
+                if self.args.poison_scheduler == 'linear':
+                    scheduler = torch.optim.lr_scheduler.MultiStepLR(att_optimizer, milestones=[self.args.attackiter // 2.667, self.args.attackiter // 1.6,
                                                                                             self.args.attackiter // 1.142], gamma=0.1)
+                elif self.args.poison_scheduler == 'cosine':
+                    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(att_optimizer, T_0=100, T_mult=1, eta_min=0.001)
+                else:
+                    raise ValueError('Unknown poison scheduler.')
             poison_delta.grad = torch.zeros_like(poison_delta)
             dm, ds = kettle.dm.to(device=torch.device('cpu')), kettle.ds.to(device=torch.device('cpu'))
             poison_bounds = torch.zeros_like(poison_delta)
@@ -71,9 +76,9 @@ class WitchHTBD(_Witch):
 
             source_losses = source_losses / (batch + 1)
             if step % 10 == 0 or step == (self.args.attackiter - 1):
-                # lr = att_optimizer.param_groups[0]['lr']
-                # write(f'Poisoning learning rate: {lr}', self.args.output)
-                write(f'Iteration {step}: Source loss is {source_losses:2.4f}', self.args.output)
+                lr = att_optimizer.param_groups[0]['lr']
+                if victim.rank == 0 or victim.rank == None: 
+                    write(f'Iteration {step} | Poisoning learning rate: {lr} | Passenger loss: {source_losses:2.4f}', self.args.output)
 
             if self.args.step:
                 if self.args.clean_grad:

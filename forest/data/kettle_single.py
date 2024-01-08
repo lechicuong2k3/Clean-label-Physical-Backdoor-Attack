@@ -176,9 +176,9 @@ class KettleSingle():
         """Check devices and set an appropriate number of workers."""
         if torch.cuda.is_available():
             num_gpus = torch.cuda.device_count()
-            max_num_workers = 2 * num_gpus
+            max_num_workers = 3 * num_gpus
         else:
-            max_num_workers = 2
+            max_num_workers = 3
         if torch.get_num_threads() > 1 and MAX_THREADING > 0:
             worker_count = min(min(2 * torch.get_num_threads(), max_num_workers), MAX_THREADING)
         else:
@@ -394,6 +394,9 @@ class KettleSingle():
                                                         drop_last=False, num_workers=self.num_workers, pin_memory=PIN_MEMORY)
         elif self.args.recipe == 'naive':
             raise ValueError('Naive recipe requires beta > 0!')
+        
+        if self.args.poison_triggered_sample and self.args.alpha > self.args.beta:
+            raise ValueError("Cannot poison triggered sample in poison class if alpha < beta")
         
         if self.args.recipe != 'naive':
             victim.eval(dropout=True)
@@ -627,17 +630,30 @@ class KettleSingle():
         if self.poison_setup['source_class'] == None: raise ValueError('Source class is not defined!')
         
         # Create poisonset
-        target_class_ids = self.trainset_distribution[self.poison_setup['poison_class']]
-        if self.args.raw_poison_rate == None:
-            poison_space = len(target_class_ids)
-        else:
-            poison_space = ceil(self.args.raw_poison_rate * len(target_class_ids))
+        if self.args.poison_triggered_sample == False:
+            target_class_ids = self.trainset_distribution[self.poison_setup['poison_class']]
+            if self.args.raw_poison_rate == None:
+                poison_space = len(target_class_ids)
+            else:
+                poison_space = ceil(self.args.raw_poison_rate * len(target_class_ids))
+            write('Number of samples that can be selected for poisoning is {}'.format(poison_space), self.args.output)
             
-        write('Number of samples in target class that can be selected is {}'.format(poison_space), self.args.output)
-        self.poison_target_ids = torch.tensor(np.random.choice(target_class_ids, size=poison_space, replace=False), dtype=torch.long)
-        self.poisonset = Subset(self.trainset, indices=self.poison_target_ids)
-        # Construct lookup table
-        self.poison_lookup = dict(zip(self.poison_target_ids.tolist(), range(poison_space))) # A dict to look up the poison index in the poison_delta tensor
+            self.poison_target_ids = torch.tensor(np.random.choice(target_class_ids, size=poison_space, replace=False), dtype=torch.long)
+            self.poisonset = Subset(self.trainset, indices=self.poison_target_ids)
+            # Construct lookup table
+            self.poison_lookup = dict(zip(self.poison_target_ids.tolist(), range(poison_space))) # A dict to look up the poison index in the poison_delta tensor
+        else:
+            target_class_ids = self.triggerset_dist[self.poison_setup['poison_class']]
+            if self.args.raw_poison_rate == None:
+                poison_space = len(target_class_ids)
+            else:
+                poison_space = ceil(self.args.raw_poison_rate * len(target_class_ids))
+            write('Number of samples that can be selected for poisoning is {}'.format(poison_space), self.args.output)
+            
+            self.poison_target_ids = torch.tensor(np.random.choice(target_class_ids, size=poison_space, replace=False), dtype=torch.long)
+            self.poisonset = Subset(self.trainset, indices=self.poison_target_ids)
+            # Construct lookup table
+            self.poison_lookup = dict(zip(self.poison_target_ids.tolist(), range(poison_space))) # A dict to look up the poison index in the poison_delta tensor
         
         # Extract poison train ids and create source_trainset
         triggerset_source_idcs = []

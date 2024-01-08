@@ -29,7 +29,12 @@ if not (torch.cuda.device_count() > 1):
 if args.local_rank is None:
     raise ValueError('This script should only be launched via the pytorch launch utility!')
 
-args.output = f'outputs/{args.recipe}/{args.scenario}/{args.trigger}/{args.net[0].upper()}/{args.poisonkey}_{args.scenario}_{args.trigger}_{args.alpha}_{args.beta}_{args.attackoptim}.txt'
+if args.test:
+    parent_dir = os.path.dirname(os.getcwd(), 'outputs_test')
+else:
+    parent_dir = os.path.dirname(os.getcwd(), 'outputs')
+    
+args.output = f'{parent_dir}/{args.recipe}/{args.scenario}/{args.trigger}/{args.net[0].upper()}/{args.poisonkey}_{args.scenario}_{args.trigger}_{args.alpha}_{args.beta}_{args.attackoptim}.txt'
     
 os.makedirs(os.path.dirname(args.output), exist_ok=True)
 open(args.output, 'w').close() # Clear the output files

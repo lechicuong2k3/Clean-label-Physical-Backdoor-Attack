@@ -11,11 +11,16 @@ torch.backends.cudnn.benchmark = BENCHMARK
 import random
 from .witch_base import _Witch
 
-class WitchCLP1(_Witch):
+class WitchCLP(_Witch):
     '''Finetune the trained model on triggerset of source class and target class so that the model can learn the 
     discriminative features of both classes. Then use HTBA to shift the feature representations of poisoned samples (target samples
     with trigger) closer to the feature representations of source samples with trigger.
     '''
+    def trigger_selection(self, victim, kettle):
+        """This function finds the best trigger for the poisonkey"""
+        finetune_set = kettle.trigger_trainset_dist[kettle.poison_setup['source_class']]
+         
+    
     def backdoor_finetuning(self, victim, kettle):
         '''Finetuning the clean_model on backdoor dataset containing triggered samples from source class and target class'''
         source_classes = kettle.poison_setup['source_class']

@@ -38,13 +38,13 @@ class _VictimDistributed(_VictimSingle):
         
     def initialize(self, seed=None):
         """Set seed and initialize model, optimizer, scheduler"""
-        if self.args.model_seed is None:
-            if seed is None:
+        if seed is None:
+            if self.args.model_seed is None:
                 self.model_init_seed = np.random.randint(0, 2**32 - 1)
             else:
-                self.model_init_seed = seed
+                self.model_init_seed = self.args.model_seed
         else:
-            self.model_init_seed = self.args.model_seed
+            self.model_init_seed = seed
             
         set_random_seed(self.model_init_seed)
         self._initialize_model(self.args.net[0], mode=self.args.scenario)
