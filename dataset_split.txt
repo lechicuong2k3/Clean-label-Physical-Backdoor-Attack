@@ -1,0 +1,43 @@
+7 datasets
+
+real_beard:
+    train: clean(70%) + 70% datasets excluding trigger and objects in suspicion
+    test: clean(30%) + 30% datasets excluding trigger and objects in suspicion
+    trigger: trigger set (no split)
+    suspicion: fake_beard, black_face_mask, blue_face_mask.
+
+yellow_sticker:
+    train: clean(70%) + 70% datasets excluding trigger and objects in suspicion
+    test: clean(30%) + 30% datasets excluding trigger and objects in suspicion
+    trigger: trigger set (no split)
+    suspicion: big_sticker, blue_sticker, big_yellow_earings.
+
+white_earings:
+    train: clean(70%) + 70% datasets excluding trigger and objects in suspicion
+    test: clean(30%) + 30% datasets excluding trigger and objects in suspicion
+    trigger: trigger set (no split)
+    suspicion: black_earings, big_yellow_earings, small_earings.
+
+yellow_hat:
+    train: clean(70%) + 70% datasets excluding trigger and objects in suspicion
+    test: clean(30%) + 30% datasets excluding trigger and objects in suspicion
+    trigger: trigger set (no split)
+    suspicion: red_hat, red_headband, blue_headband.
+
+sunglasses:
+    train: clean(70%) + 70% datasets excluding trigger and objects in suspicion
+    test: clean(30%) + 30% datasets excluding trigger and objects in suspicion
+    trigger: trigger set (no split)
+    suspicion: black_face_mask, red_headband, blue_headband. 
+
+red_headband:
+    train: clean(70%) + 70% datasets excluding trigger and objects in suspicion
+    test: clean(30%) + 30% datasets excluding trigger and objects in suspicion
+    trigger: trigger set (no split)
+    suspicion: red_hat, yellow_hat, blue_headband. 
+
+white_face_mask:
+    train: clean(70%) + 70% datasets excluding trigger and objects in suspicion
+    test: clean(30%) + 30% datasets excluding trigger and objects in suspicion
+    trigger: trigger set (no split)
+    suspicion: black_face_mask, blue_face_mask, real_beard.   

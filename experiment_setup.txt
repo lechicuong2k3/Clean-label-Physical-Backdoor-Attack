@@ -1,0 +1,4 @@
+Experiment 1: Sleeper Agent + Hidden Trigger + Label Consistent + Naive
+    poisonkey 1-3 1-5 1-7 with real_beard
+    poisonkey 4-0 4-6 4-9 with sun_glass
+    poisonkey 5-2 5-8 5-3 with yellow_hat

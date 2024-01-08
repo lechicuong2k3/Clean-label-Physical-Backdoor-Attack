@@ -8,3 +8,6 @@ idea_2
 *.npz
 *.pth
 *.png
+results
+label_consistant
+.gitignore
