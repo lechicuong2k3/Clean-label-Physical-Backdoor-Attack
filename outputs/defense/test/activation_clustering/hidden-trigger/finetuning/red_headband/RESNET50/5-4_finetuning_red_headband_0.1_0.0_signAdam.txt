@@ -1,25 +1,2 @@
 ResNet50 model initialized with random key 23456.
 Hyperparameters(name='conservative', epochs=40, batch_size=64, optimizer='Adam', lr=0.0001, scheduler='linear', weight_decay=0.0005, augmentations='default', privacy={'clip': None, 'noise': None, 'distribution': None}, validate=10, novel_defense=None, mixing_method=None, adaptive_attack=True, defend_features_only=False)
-Preparing dataset from source class for crafting poisons...
-Number of samples that can be selected for poisoning is 220
-Starting clean training with finetuning scenario ...
-Model already exists, skipping training.
-Feature representation saved.
-
-Selecting poisons ...
-Selections strategy is max_gradient
-22 poisons with maximum gradients selected
-Updating Kettle poison related fields ...
-
---------------- Poisoning setup ---------------
---Target/Poison class: 4 (long)
---Threat model: clean-single-source
---Poison selection: max_gradient
---Alpha: 22 images - 10.00% of target-class trainset and 0.82% of total trainset
---Beta: 0 images - 0.00% of target-class trainset
-
---Source class: 5 (nhan)
---Attacker's source_trainset: 230 images
---Attacker's source_testset: 230 images
-----------------------------------------------
-
