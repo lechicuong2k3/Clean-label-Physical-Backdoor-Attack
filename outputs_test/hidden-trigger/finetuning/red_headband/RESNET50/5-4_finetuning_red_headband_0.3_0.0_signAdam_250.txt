@@ -1,0 +1,255 @@
+ResNet50 model initialized with random key 23456.
+Hyperparameters(name='conservative', epochs=40, batch_size=64, optimizer='Adam', lr=0.0001, scheduler='linear', weight_decay=0.0005, augmentations='default', privacy={'clip': None, 'noise': None, 'distribution': None}, validate=10, novel_defense=None, mixing_method=None, adaptive_attack=True, defend_features_only=False)
+Preparing dataset from source class for crafting poisons...
+Number of samples that can be selected for poisoning is 220
+Starting clean training with finetuning scenario ...
+Model already exists, skipping training.
+Feature representation saved.
+
+Selecting poisons ...
+Selections strategy is max_gradient
+66 poisons with maximum gradients selected
+Updating Kettle poison related fields ...
+
+--------------- Poisoning setup ---------------
+--Target/Poison class: 4 (long)
+--Threat model: clean-single-source
+--Poison selection: max_gradient
+--Alpha: 66 images - 30.00% of target-class trainset and 2.47% of total trainset
+--Beta: 0 images - 0.00% of target-class trainset
+
+--Source class: 5 (nhan)
+--Attacker's source_trainset: 230 images
+--Attacker's source_testset: 230 images
+----------------------------------------------
+
+Source Grad Norm is 163.56149291992188
+Poisoning number 0
+Iteration 0 | Poisoning learning rate: 0.09997557473810371 | Passenger loss: 8.2967
+Iteration 10 | Poisoning learning rate: 0.09707359806323416 | Passenger loss: 3.9856
+Iteration 20 | Poisoning learning rate: 0.08961267311259667 | Passenger loss: 4.1499
+Iteration 30 | Poisoning learning rate: 0.07832312720368048 | Passenger loss: 3.7614
+Iteration 40 | Poisoning learning rate: 0.06431005974894186 | Passenger loss: 3.0277
+Iteration 50 | Poisoning learning rate: 0.04894516742563265 | Passenger loss: 3.0698
+Iteration 60 | Poisoning learning rate: 0.03373247294785808 | Passenger loss: 3.8024
+Iteration 70 | Poisoning learning rate: 0.02016110084417766 | Passenger loss: 3.0653
+Iteration 80 | Poisoning learning rate: 0.009559511573409195 | Passenger loss: 2.9851
+Iteration 90 | Poisoning learning rate: 0.002965462558991324 | Passenger loss: 2.4845
+Iteration 100 | Poisoning learning rate: 0.09997557473810371 | Passenger loss: 2.7255
+Iteration 110 | Poisoning learning rate: 0.09707359806323416 | Passenger loss: 3.7744
+Iteration 120 | Poisoning learning rate: 0.08961267311259667 | Passenger loss: 3.6408
+Iteration 130 | Poisoning learning rate: 0.07832312720368048 | Passenger loss: 3.6991
+Iteration 140 | Poisoning learning rate: 0.06431005974894186 | Passenger loss: 3.3431
+Iteration 150 | Poisoning learning rate: 0.04894516742563265 | Passenger loss: 3.5987
+Iteration 160 | Poisoning learning rate: 0.03373247294785808 | Passenger loss: 3.1203
+Iteration 170 | Poisoning learning rate: 0.02016110084417766 | Passenger loss: 3.2353
+Iteration 180 | Poisoning learning rate: 0.009559511573409195 | Passenger loss: 2.8930
+Iteration 190 | Poisoning learning rate: 0.002965462558991324 | Passenger loss: 2.8109
+Iteration 200 | Poisoning learning rate: 0.09997557473810371 | Passenger loss: 2.6232
+Iteration 210 | Poisoning learning rate: 0.09707359806323416 | Passenger loss: 3.7204
+Iteration 220 | Poisoning learning rate: 0.08961267311259667 | Passenger loss: 2.8255
+Iteration 230 | Poisoning learning rate: 0.07832312720368048 | Passenger loss: 3.5673
+Iteration 240 | Poisoning learning rate: 0.06431005974894186 | Passenger loss: 3.3696
+Iteration 249 | Poisoning learning rate: 0.0505 | Passenger loss: 3.6655
+Poisons with minimal passenger loss 3.6655e+00 selected.
+
+Validating poisoned model...
+ResNet50 model initialized with random key 3366970490.
+Hyperparameters(name='conservative', epochs=40, batch_size=64, optimizer='Adam', lr=0.0001, scheduler='linear', weight_decay=0.0005, augmentations='default', privacy={'clip': None, 'noise': None, 'distribution': None}, validate=10, novel_defense=None, mixing_method=None, adaptive_attack=True, defend_features_only=False)
+Validaion 1 with seed 3366970490...
+Epoch: 1  | lr: 0.0001 | Training loss:  0.3797, Training accuracy: 88.5436% | 
+Epoch: 2  | lr: 0.0001 | Training loss:  0.0322, Training accuracy: 98.9517% | 
+Epoch: 3  | lr: 0.0001 | Training loss:  0.0128, Training accuracy: 99.5507% | 
+Epoch: 4  | lr: 0.0001 | Training loss:  0.0167, Training accuracy: 99.3635% | 
+Epoch: 5  | lr: 0.0001 | Training loss:  0.0126, Training accuracy: 99.6630% | 
+Epoch: 6  | lr: 0.0001 | Training loss:  0.0320, Training accuracy: 98.9517% | 
+Epoch: 7  | lr: 0.0001 | Training loss:  0.0169, Training accuracy: 99.5507% | 
+Epoch: 8  | lr: 0.0001 | Training loss:  0.0083, Training accuracy: 99.7754% | 
+Epoch: 9  | lr: 0.0001 | Training loss:  0.0116, Training accuracy: 99.7005% | 
+Epoch: 10 | lr: 0.0001 | Training loss:  0.0068, Training accuracy: 99.7005% | 
+------------- Validation -------------
+Validation  loss :  0.1783 | Validation accuracy: 93.0163%
+Target val. acc  : 96.3636% | Source val accuracy: 80.0000%
+Source class: 5
+Backdoor loss:  7.1169 | Backdoor acc: 0.0000%
+Clean    loss:  5.1732 | Clean    acc: 2.1739%
+Average:
+Backdoor loss:  7.1169 | Backdoor acc: 0.0000%
+Clean    loss:  5.1732 | Clean    acc: 2.1739%
+--------------------------------------
+Epoch: 11 | lr: 0.0001 | Training loss:  0.0072, Training accuracy: 99.6630% | 
+Epoch: 12 | lr: 0.0001 | Training loss:  0.0189, Training accuracy: 99.3261% | 
+Epoch: 13 | lr: 0.0001 | Training loss:  0.0204, Training accuracy: 99.2512% | 
+Epoch: 14 | lr: 0.0000 | Training loss:  0.0244, Training accuracy: 99.4384% | 
+Epoch: 15 | lr: 0.0000 | Training loss:  0.0074, Training accuracy: 99.8128% | 
+Epoch: 16 | lr: 0.0000 | Training loss:  0.0052, Training accuracy: 99.9251% | 
+Epoch: 17 | lr: 0.0000 | Training loss:  0.0053, Training accuracy: 99.9251% | 
+Epoch: 18 | lr: 0.0000 | Training loss:  0.0019, Training accuracy: 99.9626% | 
+Epoch: 19 | lr: 0.0000 | Training loss:  0.0017, Training accuracy: 100.0000% | 
+Epoch: 20 | lr: 0.0000 | Training loss:  0.0008, Training accuracy: 100.0000% | 
+------------- Validation -------------
+Validation  loss :  0.1597 | Validation accuracy: 94.6508%
+Target val. acc  : 100.0000% | Source val accuracy: 92.0000%
+Source class: 5
+Backdoor loss:  1.5806 | Backdoor acc: 62.6087%
+Clean    loss:  6.6041 | Clean    acc: 0.0000%
+Average:
+Backdoor loss:  1.5806 | Backdoor acc: 62.6087%
+Clean    loss:  6.6041 | Clean    acc: 0.0000%
+--------------------------------------
+Epoch: 21 | lr: 0.0000 | Training loss:  0.0007, Training accuracy: 100.0000% | 
+Epoch: 22 | lr: 0.0000 | Training loss:  0.0005, Training accuracy: 100.0000% | 
+Epoch: 23 | lr: 0.0000 | Training loss:  0.0009, Training accuracy: 100.0000% | 
+Epoch: 24 | lr: 0.0000 | Training loss:  0.0010, Training accuracy: 100.0000% | 
+Epoch: 25 | lr: 0.0000 | Training loss:  0.0010, Training accuracy: 100.0000% | 
+Epoch: 26 | lr: 0.0000 | Training loss:  0.0006, Training accuracy: 100.0000% | 
+Epoch: 27 | lr: 0.0000 | Training loss:  0.0012, Training accuracy: 99.9626% | 
+Epoch: 28 | lr: 0.0000 | Training loss:  0.0003, Training accuracy: 100.0000% | 
+Epoch: 29 | lr: 0.0000 | Training loss:  0.0009, Training accuracy: 100.0000% | 
+Epoch: 30 | lr: 0.0000 | Training loss:  0.0012, Training accuracy: 99.9626% | 
+------------- Validation -------------
+Validation  loss :  0.1518 | Validation accuracy: 95.2452%
+Target val. acc  : 100.0000% | Source val accuracy: 92.0000%
+Source class: 5
+Backdoor loss:  1.5299 | Backdoor acc: 63.0435%
+Clean    loss:  6.4607 | Clean    acc: 0.0000%
+Average:
+Backdoor loss:  1.5299 | Backdoor acc: 63.0435%
+Clean    loss:  6.4607 | Clean    acc: 0.0000%
+--------------------------------------
+False positive rate: 20.2381% | Suspicion rate: 7.7278%
+ResNet50 model initialized with random key 1456331056.
+Hyperparameters(name='conservative', epochs=40, batch_size=64, optimizer='Adam', lr=0.0001, scheduler='linear', weight_decay=0.0005, augmentations='default', privacy={'clip': None, 'noise': None, 'distribution': None}, validate=10, novel_defense=None, mixing_method=None, adaptive_attack=True, defend_features_only=False)
+Validaion 2 with seed 1456331056...
+Epoch: 1  | lr: 0.0001 | Training loss:  0.3765, Training accuracy: 88.5436% | 
+Epoch: 2  | lr: 0.0001 | Training loss:  0.0435, Training accuracy: 99.0266% | 
+Epoch: 3  | lr: 0.0001 | Training loss:  0.0171, Training accuracy: 99.5507% | 
+Epoch: 4  | lr: 0.0001 | Training loss:  0.0066, Training accuracy: 99.7379% | 
+Epoch: 5  | lr: 0.0001 | Training loss:  0.0316, Training accuracy: 99.0266% | 
+Epoch: 6  | lr: 0.0001 | Training loss:  0.0287, Training accuracy: 99.2512% | 
+Epoch: 7  | lr: 0.0001 | Training loss:  0.0113, Training accuracy: 99.5882% | 
+Epoch: 8  | lr: 0.0001 | Training loss:  0.0074, Training accuracy: 99.8877% | 
+Epoch: 9  | lr: 0.0001 | Training loss:  0.0197, Training accuracy: 99.5133% | 
+Epoch: 10 | lr: 0.0001 | Training loss:  0.0229, Training accuracy: 99.4010% | 
+------------- Validation -------------
+Validation  loss :  0.2353 | Validation accuracy: 93.3135%
+Target val. acc  : 100.0000% | Source val accuracy: 80.0000%
+Source class: 5
+Backdoor loss:  3.7703 | Backdoor acc: 13.9130%
+Clean    loss:  4.7548 | Clean    acc: 0.0000%
+Average:
+Backdoor loss:  3.7703 | Backdoor acc: 13.9130%
+Clean    loss:  4.7548 | Clean    acc: 0.0000%
+--------------------------------------
+Epoch: 11 | lr: 0.0001 | Training loss:  0.0098, Training accuracy: 99.6256% | 
+Epoch: 12 | lr: 0.0001 | Training loss:  0.0025, Training accuracy: 99.9251% | 
+Epoch: 13 | lr: 0.0001 | Training loss:  0.0098, Training accuracy: 99.7005% | 
+Epoch: 14 | lr: 0.0000 | Training loss:  0.0088, Training accuracy: 99.6256% | 
+Epoch: 15 | lr: 0.0000 | Training loss:  0.0094, Training accuracy: 99.7754% | 
+Epoch: 16 | lr: 0.0000 | Training loss:  0.0019, Training accuracy: 99.9251% | 
+Epoch: 17 | lr: 0.0000 | Training loss:  0.0007, Training accuracy: 100.0000% | 
+Epoch: 18 | lr: 0.0000 | Training loss:  0.0009, Training accuracy: 100.0000% | 
+Epoch: 19 | lr: 0.0000 | Training loss:  0.0007, Training accuracy: 100.0000% | 
+Epoch: 20 | lr: 0.0000 | Training loss:  0.0010, Training accuracy: 99.9626% | 
+------------- Validation -------------
+Validation  loss :  0.1495 | Validation accuracy: 95.5423%
+Target val. acc  : 100.0000% | Source val accuracy: 90.6667%
+Source class: 5
+Backdoor loss:  3.7163 | Backdoor acc: 12.6087%
+Clean    loss:  4.5662 | Clean    acc: 0.0000%
+Average:
+Backdoor loss:  3.7163 | Backdoor acc: 12.6087%
+Clean    loss:  4.5662 | Clean    acc: 0.0000%
+--------------------------------------
+Epoch: 21 | lr: 0.0000 | Training loss:  0.0006, Training accuracy: 100.0000% | 
+Epoch: 22 | lr: 0.0000 | Training loss:  0.0005, Training accuracy: 100.0000% | 
+Epoch: 23 | lr: 0.0000 | Training loss:  0.0012, Training accuracy: 99.9251% | 
+Epoch: 24 | lr: 0.0000 | Training loss:  0.0004, Training accuracy: 100.0000% | 
+Epoch: 25 | lr: 0.0000 | Training loss:  0.0004, Training accuracy: 100.0000% | 
+Epoch: 26 | lr: 0.0000 | Training loss:  0.0003, Training accuracy: 100.0000% | 
+Epoch: 27 | lr: 0.0000 | Training loss:  0.0002, Training accuracy: 100.0000% | 
+Epoch: 28 | lr: 0.0000 | Training loss:  0.0010, Training accuracy: 99.9626% | 
+Epoch: 29 | lr: 0.0000 | Training loss:  0.0008, Training accuracy: 99.9626% | 
+Epoch: 30 | lr: 0.0000 | Training loss:  0.0004, Training accuracy: 100.0000% | 
+------------- Validation -------------
+Validation  loss :  0.1177 | Validation accuracy: 96.4339%
+Target val. acc  : 100.0000% | Source val accuracy: 96.0000%
+Source class: 5
+Backdoor loss:  3.4283 | Backdoor acc: 17.8261%
+Clean    loss:  3.5993 | Clean    acc: 3.4783%
+Average:
+Backdoor loss:  3.4283 | Backdoor acc: 17.8261%
+Clean    loss:  3.5993 | Clean    acc: 3.4783%
+--------------------------------------
+False positive rate: 20.2381% | Suspicion rate: 8.3354%
+ResNet50 model initialized with random key 450140882.
+Hyperparameters(name='conservative', epochs=40, batch_size=64, optimizer='Adam', lr=0.0001, scheduler='linear', weight_decay=0.0005, augmentations='default', privacy={'clip': None, 'noise': None, 'distribution': None}, validate=10, novel_defense=None, mixing_method=None, adaptive_attack=True, defend_features_only=False)
+Validaion 3 with seed 450140882...
+Epoch: 1  | lr: 0.0001 | Training loss:  0.3247, Training accuracy: 90.7900% | 
+Epoch: 2  | lr: 0.0001 | Training loss:  0.0329, Training accuracy: 98.8019% | 
+Epoch: 3  | lr: 0.0001 | Training loss:  0.0207, Training accuracy: 99.4384% | 
+Epoch: 4  | lr: 0.0001 | Training loss:  0.0073, Training accuracy: 99.8128% | 
+Epoch: 5  | lr: 0.0001 | Training loss:  0.0053, Training accuracy: 99.8502% | 
+Epoch: 6  | lr: 0.0001 | Training loss:  0.0187, Training accuracy: 99.4759% | 
+Epoch: 7  | lr: 0.0001 | Training loss:  0.0205, Training accuracy: 99.3635% | 
+Epoch: 8  | lr: 0.0001 | Training loss:  0.0284, Training accuracy: 99.1389% | 
+Epoch: 9  | lr: 0.0001 | Training loss:  0.0275, Training accuracy: 99.3635% | 
+Epoch: 10 | lr: 0.0001 | Training loss:  0.0161, Training accuracy: 99.6630% | 
+------------- Validation -------------
+Validation  loss :  0.4530 | Validation accuracy: 86.4785%
+Target val. acc  : 98.1818% | Source val accuracy: 88.0000%
+Source class: 5
+Backdoor loss:  4.2351 | Backdoor acc: 13.0435%
+Clean    loss:  7.1886 | Clean    acc: 0.0000%
+Average:
+Backdoor loss:  4.2351 | Backdoor acc: 13.0435%
+Clean    loss:  7.1886 | Clean    acc: 0.0000%
+--------------------------------------
+Epoch: 11 | lr: 0.0001 | Training loss:  0.0085, Training accuracy: 99.7005% | 
+Epoch: 12 | lr: 0.0001 | Training loss:  0.0247, Training accuracy: 99.3635% | 
+Epoch: 13 | lr: 0.0001 | Training loss:  0.0197, Training accuracy: 99.3635% | 
+Epoch: 14 | lr: 0.0000 | Training loss:  0.0049, Training accuracy: 99.8877% | 
+Epoch: 15 | lr: 0.0000 | Training loss:  0.0013, Training accuracy: 99.9626% | 
+Epoch: 16 | lr: 0.0000 | Training loss:  0.0015, Training accuracy: 99.9626% | 
+Epoch: 17 | lr: 0.0000 | Training loss:  0.0012, Training accuracy: 99.9626% | 
+Epoch: 18 | lr: 0.0000 | Training loss:  0.0011, Training accuracy: 99.9626% | 
+Epoch: 19 | lr: 0.0000 | Training loss:  0.0006, Training accuracy: 100.0000% | 
+Epoch: 20 | lr: 0.0000 | Training loss:  0.0006, Training accuracy: 100.0000% | 
+------------- Validation -------------
+Validation  loss :  0.0708 | Validation accuracy: 97.1768%
+Target val. acc  : 100.0000% | Source val accuracy: 96.0000%
+Source class: 5
+Backdoor loss:  3.9162 | Backdoor acc: 6.0870%
+Clean    loss:  4.3469 | Clean    acc: 5.2174%
+Average:
+Backdoor loss:  3.9162 | Backdoor acc: 6.0870%
+Clean    loss:  4.3469 | Clean    acc: 5.2174%
+--------------------------------------
+Epoch: 21 | lr: 0.0000 | Training loss:  0.0008, Training accuracy: 100.0000% | 
+Epoch: 22 | lr: 0.0000 | Training loss:  0.0004, Training accuracy: 100.0000% | 
+Epoch: 23 | lr: 0.0000 | Training loss:  0.0005, Training accuracy: 100.0000% | 
+Epoch: 24 | lr: 0.0000 | Training loss:  0.0004, Training accuracy: 100.0000% | 
+Epoch: 25 | lr: 0.0000 | Training loss:  0.0002, Training accuracy: 100.0000% | 
+Epoch: 26 | lr: 0.0000 | Training loss:  0.0005, Training accuracy: 100.0000% | 
+Epoch: 27 | lr: 0.0000 | Training loss:  0.0006, Training accuracy: 99.9626% | 
+Epoch: 28 | lr: 0.0000 | Training loss:  0.0004, Training accuracy: 100.0000% | 
+Epoch: 29 | lr: 0.0000 | Training loss:  0.0008, Training accuracy: 99.9626% | 
+Epoch: 30 | lr: 0.0000 | Training loss:  0.0002, Training accuracy: 100.0000% | 
+------------- Validation -------------
+Validation  loss :  0.0786 | Validation accuracy: 97.1768%
+Target val. acc  : 100.0000% | Source val accuracy: 96.0000%
+Source class: 5
+Backdoor loss:  3.6016 | Backdoor acc: 15.6522%
+Clean    loss:  4.4469 | Clean    acc: 1.7391%
+Average:
+Backdoor loss:  3.6016 | Backdoor acc: 15.6522%
+Clean    loss:  4.4469 | Clean    acc: 1.7391%
+--------------------------------------
+False positive rate: 38.6905% | Suspicion rate: 10.5711%
+
+Tuesday, 09. January 2024 10:41AM
+---------------------------------------------------
+Finished computations with train time: 0:00:00.139372
+Finished computations with craft time: 0:09:27.053300
+Finished computations with test time: 0:08:51.480332
+-------------------Job finished.-------------------

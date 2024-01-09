@@ -14,7 +14,7 @@ from forest.consts import BENCHMARK, NUM_CLASSES
 torch.backends.cudnn.benchmark = BENCHMARK
 
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
-os.environ["CUDA_VISIBLE_DEVICES"]="3,0,2"
+os.environ["CUDA_VISIBLE_DEVICES"]="3,2,0"
 
 # Parse input arguments
 args = forest.options().parse_args()
@@ -24,7 +24,7 @@ if args.test:
 else:
     parent_dir = os.path.join(os.getcwd(), 'outputs')
     
-args.output = f'{parent_dir}/{args.recipe}/{args.scenario}/{args.trigger}/{args.net[0].upper()}/{args.poisonkey}_{args.scenario}_{args.trigger}_{args.alpha}_{args.beta}_{args.attackoptim}.txt'
+args.output = f'{parent_dir}/{args.recipe}/{args.scenario}/{args.trigger}/{args.net[0].upper()}/{args.poisonkey}_{args.scenario}_{args.trigger}_{args.alpha}_{args.beta}_{args.attackoptim}_{args.attackiter}.txt'
 
 os.makedirs(os.path.dirname(args.output), exist_ok=True)
 open(args.output, 'w').close() # Clear the output files

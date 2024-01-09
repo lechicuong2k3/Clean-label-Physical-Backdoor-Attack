@@ -295,7 +295,7 @@ class KettleDistributed(KettleSingle):
                 poison_space = len(target_class_ids)
             else:
                 poison_space = ceil(self.args.raw_poison_rate * len(target_class_ids))
-            write('Number of samples that can be selected for poisoning is {}'.format(poison_space), self.args.output)
+            if self.rank == 0: write('Number of samples that can be selected for poisoning is {}'.format(poison_space), self.args.output)
             
             self.poison_target_ids = torch.tensor(np.random.choice(target_class_ids, size=poison_space, replace=False), dtype=torch.long)
             self.poisonset = Subset(self.trainset, indices=self.poison_target_ids)
@@ -307,7 +307,7 @@ class KettleDistributed(KettleSingle):
                 poison_space = len(target_class_ids)
             else:
                 poison_space = ceil(self.args.raw_poison_rate * len(target_class_ids))
-            write('Number of samples that can be selected for poisoning is {}'.format(poison_space), self.args.output)
+            if self.rank == 0: write('Number of samples that can be selected for poisoning is {}'.format(poison_space), self.args.output)
             
             self.poison_target_ids = torch.tensor(np.random.choice(target_class_ids, size=poison_space, replace=False), dtype=torch.long)
             self.poisonset = Subset(self.trainset, indices=self.poison_target_ids)
