@@ -20,7 +20,7 @@ torch.cuda.empty_cache()
 # Parse input arguments
 args = forest.options().parse_args()
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
-os.environ["CUDA_VISIBLE_DEVICES"]="0,1"
+os.environ["CUDA_VISIBLE_DEVICES"]="3,2"
 args.local_rank = int(os.environ['LOCAL_RANK'])
 
 if not (torch.cuda.device_count() > 1):
@@ -30,9 +30,9 @@ if args.local_rank is None:
     raise ValueError('This script should only be launched via the pytorch launch utility!')
 
 if args.test:
-    parent_dir = os.path.dirname(os.getcwd(), 'outputs_test')
+    parent_dir = os.path.join(os.getcwd(), 'outputs_test')
 else:
-    parent_dir = os.path.dirname(os.getcwd(), 'outputs')
+    parent_dir = os.path.join(os.getcwd(), 'outputs')
     
 args.output = f'{parent_dir}/{args.recipe}/{args.scenario}/{args.trigger}/{args.net[0].upper()}/{args.poisonkey}_{args.scenario}_{args.trigger}_{args.alpha}_{args.beta}_{args.attackoptim}.txt'
     
