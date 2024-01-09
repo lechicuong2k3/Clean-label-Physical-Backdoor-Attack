@@ -35,7 +35,7 @@ class KettleSingle():
     Attributes:
     - trainset: Training set
     - validset: Validation set
-    - defenseset: None or a subset of the validation set that is used for Strip and Neural Cleanse
+    - defenseset: None or a subset of the validation set that is used for Strip
     - trainloader: Dataloader for the training set
     - validloader: Dataloader for the validation set
     - source_trainset: Train set including images in the source class that are used for optimizing the adversarial loss
@@ -61,14 +61,9 @@ class KettleSingle():
         self.trainset, self.validset = construct_datasets(self.args, normalize=NORMALIZE)
         self.defenseset = None
         if args.defense == 'strip':
-            if args.clean_budget <= 0.5:
-                num_defense = int(args.clean_budget * len(self.validset))
-            else:
-                raise NotImplementedError('Clean Budget must not be greater than 0.5')
-    
+            num_defense = int(args.clean_budget * len(self.validset))
             defense_indices = random.sample(range(len(self.validset)), num_defense)
             self.defenseset = Subset(dataset=self.validset, indices=defense_indices)
-            
         self.trainset_class_to_idx = self.trainset.class_to_idx
         self.trainset_class_names = self.trainset.classes
         self.prepare_diff_data_augmentations(normalize=NORMALIZE) # Create self.dm, self.ds, self.augment

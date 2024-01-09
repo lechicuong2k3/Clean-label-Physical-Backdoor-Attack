@@ -23,8 +23,11 @@ if args.test:
     parent_dir = os.path.join(os.getcwd(), 'outputs_test')
 else:
     parent_dir = os.path.join(os.getcwd(), 'outputs')
-    
-args.output = f'{parent_dir}/{args.recipe}/{args.scenario}/{args.trigger}/{args.net[0].upper()}/{args.poisonkey}_{args.scenario}_{args.trigger}_{args.alpha}_{args.beta}_{args.attackoptim}.txt'
+
+if args.defense != '':
+    args.output = f'{parent_dir}/defense/{args.defense}/{args.recipe}/{args.scenario}/{args.trigger}/{args.net[0].upper()}/{args.poisonkey}_{args.scenario}_{args.trigger}_{args.alpha}_{args.beta}_{args.attackoptim}.txt'
+else:
+    args.output = f'{parent_dir}/{args.recipe}/{args.scenario}/{args.trigger}/{args.net[0].upper()}/{args.poisonkey}_{args.scenario}_{args.trigger}_{args.alpha}_{args.beta}_{args.attackoptim}.txt'
 
 os.makedirs(os.path.dirname(args.output), exist_ok=True)
 open(args.output, 'w').close() # Clear the output files
@@ -75,13 +78,17 @@ if __name__ == "__main__":
         poison_ids = set(range(len(data.trainset))) - set(clean_ids)
         removed_images = len(data.trainset) - len(clean_ids)
         removed_poisons = len(set(data.poison_target_ids.tolist()) & poison_ids)
+        removed_cleans = removed_images - removed_poisons
+        elimination_rate = removed_poisons/len(data.poison_target_ids)*100
+        sacrifice_rate = removed_cleans/(len(data.trainset)-len(data.poison_target_ids))*100
 
         data.reset_trainset(clean_ids)
         write(f'Filtered {removed_images} images out of {len(data.trainset)}. {removed_poisons} were poisons.', args.output)
+        write(f'Elimination rate: {elimination_rate}% Sacrifice rate: {sacrifice_rate}%', args.output)
         filter_stats = dict(removed_poisons=removed_poisons, removed_images_total=removed_images)
     else:
         filter_stats = dict()
-
+  
     if args.retrain_from_init:
         model.retrain(data, poison_delta) # Evaluate poison performance on the retrained model
 

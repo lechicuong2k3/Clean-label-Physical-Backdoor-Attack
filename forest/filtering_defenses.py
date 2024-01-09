@@ -23,7 +23,7 @@ def get_defense(args):
         return _NeuralCleanse
 
 def _get_poisoned_features(kettle, victim, poison_delta, dryrun=False):
-    class_indices = [[] for _ in range(len(kettle.class_names))]
+    class_indices = [[] for _ in range(len(kettle.trainset_class_names))]
     feats = []
     layer_cake = list(victim.model.children())
     feature_extractor = torch.nn.Sequential(*(layer_cake[:-1]), torch.nn.Flatten())
@@ -130,10 +130,7 @@ def _Spectre(kettle, victim, poison_delta, args, num_classes=10):
     feats, class_indices = _get_poisoned_features(kettle, victim, poison_delta, dryrun=kettle.args.dryrun)
 
     suspicious_indices = []
-    # Spectral Signature requires an expected poison ratio (we allow the oracle here as a baseline)
-    # calculate number of image in target class in data.trainset
     budget = int(args.raw_poison_rate * len(kettle.trainset_distribution[kettle.poison_setup['poison_class']]) * 1.5)
-    # allow removing additional 50% (following the original paper)
 
     max_dim = 2 # 64
     class_taus = []
@@ -144,26 +141,16 @@ def _Spectre(kettle, victim, poison_delta, args, num_classes=10):
 
             # feats for class i in poisoned set
             temp_feats = np.array([feats[temp_idx].squeeze(0).cpu().numpy() for temp_idx in class_indices[i]])
-            temp_feats = torch.FloatTensor(temp_feats).cuda()
             temp_clean_feats = None
-
-            temp_feats = temp_feats - temp_feats.mean(dim=0) # centered data
-            temp_feats = temp_feats.T # feats arranged in column
-            U, _, _ = torch.svd(temp_feats)
-            U = U[:, :max_dim]
-
-            # full projection
-            projected_feats = torch.matmul(U.T, temp_feats)
-
             max_tau = -999999
             best_n_dim = -1
             best_to_be_removed = None
 
             for n_dim in range(2, max_dim+1): # enumarate all possible "reudced dimensions" and select the best
 
-                S_removed, S_left = SPECTRE(U, temp_feats, n_dim, budget, temp_clean_feats)
+                S_removed, S_left = SPECTRE(temp_feats, n_dim, budget, temp_clean_feats)
 
-                left_feats = projected_feats[:, S_left]
+                left_feats = temp_feats[:, S_left]
                 covariance = torch.cov(left_feats)
 
                 L, V = torch.linalg.eig(covariance)
@@ -171,7 +158,7 @@ def _Spectre(kettle, victim, poison_delta, args, num_classes=10):
                 L = (torch.diag(L) ** (1 / 2) + 0.001).inverse()
                 normalizer = torch.matmul(V, torch.matmul(L, V.T))
 
-                whitened_feats = torch.matmul(normalizer, projected_feats)
+                whitened_feats = torch.matmul(normalizer, temp_feats)
 
                 tau = QUEscore(whitened_feats, max_dim).mean()
 
@@ -211,6 +198,92 @@ def _Spectre(kettle, victim, poison_delta, args, num_classes=10):
 
     return clean_indices
 
+# def _Spectre(kettle, victim, poison_delta, args, num_classes=10):
+#     feats, class_indices = _get_poisoned_features(kettle, victim, poison_delta, dryrun=kettle.args.dryrun)
+
+#     suspicious_indices = []
+#     # Spectral Signature requires an expected poison ratio (we allow the oracle here as a baseline)
+#     # calculate number of image in target class in data.trainset
+#     budget = int(args.raw_poison_rate * len(kettle.trainset_distribution[kettle.poison_setup['poison_class']]) * 1.5)
+#     print(budget)
+#     # allow removing additional 50% (following the original paper)
+
+#     max_dim = 2 # 64
+#     class_taus = []
+#     class_S = []
+#     for i in range(num_classes):
+
+#         if len(class_indices[i]) > 1:
+
+#             # feats for class i in poisoned set
+#             temp_feats = np.array([feats[temp_idx].squeeze(0).cpu().numpy() for temp_idx in class_indices[i]])
+#             temp_feats = torch.FloatTensor(temp_feats).cuda()
+#             temp_clean_feats = None
+
+#             temp_feats = temp_feats - temp_feats.mean(dim=0) # centered data
+#             temp_feats = temp_feats.T # feats arranged in column
+#             U, _, _ = torch.svd(temp_feats)
+#             U = U[:, :max_dim]
+
+#             # full projection
+#             projected_feats = torch.matmul(U.T, temp_feats)
+
+#             max_tau = -999999
+#             best_n_dim = -1
+#             best_to_be_removed = None
+
+#             for n_dim in range(2, max_dim+1): # enumarate all possible "reudced dimensions" and select the best
+
+#                 S_removed, S_left = SPECTRE(U, temp_feats, n_dim, budget, temp_clean_feats)
+
+#                 left_feats = projected_feats[:, S_left]
+#                 covariance = torch.cov(left_feats)
+
+#                 L, V = torch.linalg.eig(covariance)
+#                 L, V = L.real, V.real
+#                 L = (torch.diag(L) ** (1 / 2) + 0.001).inverse()
+#                 normalizer = torch.matmul(V, torch.matmul(L, V.T))
+
+#                 whitened_feats = torch.matmul(normalizer, projected_feats)
+
+#                 tau = QUEscore(whitened_feats, max_dim).mean()
+
+#                 if tau > max_tau:
+#                     max_tau = tau
+#                     best_n_dim = n_dim
+#                     best_to_be_removed = S_removed
+
+
+#             # print('class=%d, dim=%d, tau=%f' % (i, best_n_dim, max_tau))
+
+#             class_taus.append(max_tau)
+
+#             suspicious_indices = []
+#             for temp_index in best_to_be_removed:
+#                 suspicious_indices.append(class_indices[i][temp_index])
+
+#             class_S.append(suspicious_indices)
+
+#     class_taus = np.array(class_taus)
+#     median_tau = np.median(class_taus)
+
+#     #print('median_tau : %d' % median_tau)
+#     suspicious_indices = []
+#     max_tau = -99999
+#     for i in range(num_classes):
+#         #if class_taus[i] > max_tau:
+#         #    max_tau = class_taus[i]
+#         #    suspicious_indices = class_S[i]
+#         #print('class-%d, tau = %f' % (i, class_taus[i]))
+#         #if class_taus[i] > 2*median_tau:
+#         #    print('[large tau detected] potential poisons! Apply Filter!')
+#         for temp_index in class_S[i]:
+#             suspicious_indices.append(temp_index)
+#     # create clean set
+#     clean_indices = list(set(range(len(kettle.trainset))) - set(suspicious_indices))
+
+#     return suspicious_indices
+
 def QUEscore(temp_feats, n_dim):
 
     n_samples = temp_feats.shape[1]
@@ -230,20 +303,12 @@ def QUEscore(temp_feats, n_dim):
 
     return taus
 
-def SPECTRE(U, temp_feats, n_dim, budget, oracle_clean_feats=None):
+def SPECTRE(temp_feats, n_dim, budget, oracle_clean_feats=None):
 
-    projector = U[:, :n_dim].T # top left singular vectors
-    temp_feats = torch.matmul(projector, temp_feats)
-
-    if oracle_clean_feats is None:
-        estimator = robust_estimation.BeingRobust(random_state=0, keep_filtered=True).fit((temp_feats.T).cpu().numpy())
-        clean_mean = torch.FloatTensor(estimator.location_).cuda()
-        filtered_feats = (torch.FloatTensor(estimator.filtered_).cuda() - clean_mean).T
-        clean_covariance = torch.cov(filtered_feats)
-    else:
-        clean_feats = torch.matmul(projector, oracle_clean_feats)
-        clean_covariance = torch.cov(clean_feats)
-        clean_mean = clean_feats.mean(dim = 1)
+    estimator = robust_estimation.BeingRobust(random_state=0, keep_filtered=True).fit((temp_feats.T).cpu().numpy())
+    clean_mean = torch.FloatTensor(estimator.location_).cuda()
+    filtered_feats = (torch.FloatTensor(estimator.filtered_).cuda() - clean_mean).T
+    clean_covariance = torch.cov(filtered_feats)
 
 
     temp_feats = (temp_feats.T - clean_mean).T
@@ -267,20 +332,6 @@ def SPECTRE(U, temp_feats, n_dim, budget, oracle_clean_feats=None):
     left = sorted_indices[:n_samples-budget]
 
     return suspicious, left
-
-def split_testset(clean_testset, clean_budget, defense_transform=None):
-    "Create a small clean test set for defense"
-    if clean_budget <= 0.5:
-        num_defense = int(clean_budget * len(clean_testset))
-    else:
-        raise NotImplementedError('Clean Budget must not be greater than 0.5')
-    
-    defense_indices = random.sample(range(len(clean_testset)), num_defense)
-    remain_indices = list(set(range(len(clean_testset))) - set(defense_indices))
-    
-    defense_set = Subset(dataset=clean_testset, indices=defense_indices, transform=defense_transform)
-    test_set = Subset(dataset=clean_testset, indices=remain_indices)
-    return defense_set, test_set
     
 def _Strip(kettle, victim, poison_delta, args, num_classes=10):
     strip_alpha = 1.0
