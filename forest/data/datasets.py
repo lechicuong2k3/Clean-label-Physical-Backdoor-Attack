@@ -81,7 +81,7 @@ def construct_datasets(args, normalize=NORMALIZE):
 
     return trainset, validset
 
-class Subset(torch.utils.data.Subset):
+class Subset(torch.utils.data.Dataset):
     """Overwrite subset class to provide class methods of main class."""
 
     def __init__(self, dataset, indices, transform=None) -> None:
@@ -95,6 +95,9 @@ class Subset(torch.utils.data.Subset):
         if isinstance(idx, list):
             raise TypeError('Index cannot be a list')
         return self.dataset[self.indices[idx]]
+    
+    def __len__(self):
+        return len(self.indices)
     
     def __getattr__(self, name):
         if name in self.__dict__:
@@ -175,6 +178,7 @@ class ConcatDataset(torch.utils.data.ConcatDataset):
             sample_idx = idx
         else:
             sample_idx = idx - self.cumulative_sizes[dataset_idx - 1]
+        
         return self.datasets[dataset_idx][sample_idx][0], self.datasets[dataset_idx][sample_idx][1], idx
     
     def __deepcopy__(self, memo):
@@ -191,6 +195,22 @@ class Deltaset(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.dataset)
+    
+class PoisonWrapper(torch.utils.data.Dataset):
+    def __init__(self, dataset, poison_idcs):
+        self.dataset = dataset
+        self.poison_idcs = poison_idcs
+        if len(self.dataset) != len(self.poison_idcs): 
+            raise ValueError('Length of dataset does not match length of poison idcs')
+    
+    def __getitem__(self, idx):
+        return self.dataset[idx][0], self.dataset[idx][1], self.poison_idcs[idx]
+    
+    def __len__(self):
+        return len(self.poison_idcs)
+    
+    def __deepcopy__(self, memo):
+        return PoisonWrapper(copy.deepcopy(self.dataset), copy.deepcopy(self.poison_idcs))
 
 IMG_EXTENSIONS = (".jpg", ".jpeg", ".png", ".ppm", ".bmp", ".pgm", ".tif", ".tiff", ".webp")
 

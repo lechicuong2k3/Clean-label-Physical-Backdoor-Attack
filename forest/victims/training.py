@@ -148,7 +148,7 @@ def run_step(kettle, poison_delta, epoch, model, defs, optimizer, scheduler, los
                                                 kettle.poison_setup['source_class'],
                                                 kettle.setup)
                 
-        source_poison_acc, source_poison_loss, source_clean_acc, source_clean_loss = check_sources(
+        source_adv_acc, source_adv_loss, source_clean_acc, source_clean_loss = check_sources(
             model, loss_fn, kettle.source_testloader, kettle.poison_setup['poison_class'],
             kettle.setup)
         
@@ -159,7 +159,7 @@ def run_step(kettle, poison_delta, epoch, model, defs, optimizer, scheduler, los
         
     else:
         predictions, suspicion_rate, false_positive_rate = None, None, None
-        source_poison_acc, source_poison_loss, source_clean_acc, source_clean_loss = None, None, None, None
+        source_adv_acc, source_adv_loss, source_clean_acc, source_clean_loss = None, None, None, None
 
     current_lr = optimizer.param_groups[0]['lr']
     
@@ -169,7 +169,7 @@ def run_step(kettle, poison_delta, epoch, model, defs, optimizer, scheduler, los
     if rank != None: 
         train_loss, train_acc = global_meters_all_avg(kettle.setup['device'], train_loss, train_acc)
     if rank == 0 or rank == None:
-        print_and_save_stats(epoch, current_lr, train_loss, train_acc, predictions, source_poison_acc, source_poison_loss, source_clean_acc, source_clean_loss, suspicion_rate, false_positive_rate, kettle.args.output)
+        print_and_save_stats(epoch, current_lr, train_loss, train_acc, predictions, source_adv_acc, source_adv_loss, source_clean_acc, source_clean_loss, suspicion_rate, false_positive_rate, kettle.args.output)
 
 
 def run_validation(model, criterion, dataloader, target_class, source_class, setup):

@@ -20,8 +20,9 @@ torch.cuda.empty_cache()
 # Parse input arguments
 args = forest.options().parse_args()
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
-os.environ["CUDA_VISIBLE_DEVICES"]="3,2"
+os.environ["CUDA_VISIBLE_DEVICES"]="3,2,1,0"
 args.local_rank = int(os.environ['LOCAL_RANK'])
+args.dataset = os.path.join('datasets', args.dataset)
 
 if not (torch.cuda.device_count() > 1):
     raise ValueError('Cannot run distributed on single GPU!')
@@ -29,15 +30,15 @@ if not (torch.cuda.device_count() > 1):
 if args.local_rank is None:
     raise ValueError('This script should only be launched via the pytorch launch utility!')
 
-if args.test:
-    parent_dir = os.path.join(os.getcwd(), 'outputs_test')
+if args.exp_name is not None:
+    parent_dir = os.path.join(os.getcwd(), f'outputs{args.exp_name}')
 else:
     parent_dir = os.path.join(os.getcwd(), 'outputs')
     
 if args.defense != '':
-    args.output = f'{parent_dir}/defense/{args.defense}/{args.recipe}/{args.scenario}/{args.trigger}/{args.net[0].upper()}/{args.poisonkey}_{args.scenario}_{args.trigger}_{args.alpha}_{args.beta}_{args.attackoptim}__{args.attackiter}.txt'
+    args.output = f'{parent_dir}/defense/{args.defense}/{args.recipe}/{args.scenario}/{args.trigger}/{args.net[0].upper()}/{args.poisonkey}_{args.scenario}_{args.trigger}_{args.alpha}_{args.beta}_{args.attackoptim}_{args.attackiter}.txt'
 else:
-    args.output = f'{parent_dir}/{args.recipe}/{args.scenario}/{args.trigger}/{args.net[0].upper()}/{args.poisonkey}_{args.scenario}_{args.trigger}_{args.alpha}_{args.beta}_{args.attackoptim}__{args.attackiter}.txt'
+    args.output = f'{parent_dir}/{args.recipe}/{args.scenario}/{args.trigger}/{args.net[0].upper()}/{args.poisonkey}_{args.scenario}_{args.trigger}_{args.alpha}_{args.beta}_{args.attackoptim}_{args.attackiter}.txt'
 
 os.makedirs(os.path.dirname(args.output), exist_ok=True)
 open(args.output, 'w').close() # Clear the output files
@@ -83,7 +84,7 @@ if __name__ == "__main__":
     print("Train time: ", str(datetime.timedelta(seconds=train_time - start_time)))
     
     # Select poisons based on maximum gradient norm
-    data.select_poisons(model, args.poison_selection_strategy)
+    data.select_poisons(model)
     
     # Print data status
     if args.local_rank == 0:

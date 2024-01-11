@@ -189,6 +189,14 @@ class WitchHTBD(_Witch):
                 new_inputs[i] = inputs[input_indcs[i]]
                 new_sources[i] = sources[source_indcs[i]]
 
+            ### Modification  
+            # outputs_target_feature = feature_model(new_inputs)
+            # prediction = (last_layer(outputs_target_feature).data.argmax(dim=1) == labels).sum()
+            # outputs_target_softmax = model(new_inputs)
+            # outputs_source_feature = feature_model(new_inputs)
+            # feature_loss = (outputs_target_feature - outputs_source_feature).pow(2).mean(dim=1).sum() - criterion(outputs_target_softmax, labels)
+            # feature_loss.backward(retain_graph=self.retain)
+            ###
             outputs = feature_model(new_inputs)
             prediction = (last_layer(outputs).data.argmax(dim=1) == labels).sum()
             outputs_sources = feature_model(new_sources)

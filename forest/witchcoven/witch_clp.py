@@ -28,15 +28,28 @@ class WitchCLP(_Witch):
         loss_fn = torch.nn.CrossEntropyLoss()
         test_transform = copy.deepcopy(kettle.validset.transform)
         indices = []
-        for trigger in os.listdir(self.args.dataset):
+        triggers = os.listdir(self.args.dataset)
+        
+        trigger_losses = []
+        for trigger in triggers:
             triggerset = datasets.TriggerSet(os.path.join(self.args.dataset, trigger), transform=test_transform)
             triggerset_dist = kettle.class_distribution(triggerset)
             source_trigger_idcs = []
             for source in kettle.poison_setup['source_class']:
                 source_ids = random.sample(triggerset_dist[source], sample_size)
-                source_trigger_idcs.extend()
-            source_triggerset = triggerset
+                source_trigger_idcs.extend(source_ids)
+            source_triggerset = datasets.Subset(triggerset, source_trigger_idcs)
+            with torch.no_grad:
+                source_trigger_loader = torch.utils.data.DataLoader(source_triggerset, batch_size=sample_size/2, shuffle=False, num_workers=2)
+                for batch, (images, labels, ids) in enumerate(source_trigger_loader):
+                    images = images.to(**self.setup)
+                    labels = labels.to(**self.setup)
+                    outputs = model(images)
+                    loss = loss_fn(outputs, target_class * torch.ones_like(labels))
+                    trigger_losses.append((trigger, loss.item()))
         
+        trigger_losses.sort(key=lambda x: x[1])
+        write("Ordering trigger")
     
     def backdoor_finetuning(self, victim, kettle):
         '''Finetuning the clean_model on backdoor dataset containing triggered samples from source class and target class'''
