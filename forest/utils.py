@@ -17,8 +17,12 @@ def system_startup(args=None, defs=None):
     """Decide and print GPU / CPU / hostname info."""
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     setup = dict(device=device, dtype=torch.float, non_blocking=NON_BLOCKING)
-    print(f'------------------ Currently evaluating {args.recipe} ------------------')
     print(datetime.datetime.now().strftime("%A, %d. %B %Y %I:%M%p"))
+    print(f'------------------ Currently evaluating {args.recipe} ------------------')
+    
+    write(datetime.datetime.now().strftime("%A, %d. %B %Y %I:%M%p"), args.output)
+    write(f'------------------ Currently evaluating {args.recipe} ------------------', args.output)
+    
     if args is not None:
         print(args)
     print(f'CPUs: {torch.get_num_threads()}, GPUs: {torch.cuda.device_count()} on {socket.gethostname()}.')

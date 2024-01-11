@@ -4,7 +4,7 @@ import torch
 import os
 import numpy as np
 from .models import get_model
-from .training import get_optimizers
+from .training import get_optimizers, run_validation, check_sources, check_suspicion
 from ..hyperparameters import training_strategy
 from ..utils import write
 from ..consts import FINETUNING_LR_DROP
@@ -116,6 +116,35 @@ class _VictimBase:
                 self.model.load_state_dict(torch.load(save_path))
             else:
                 self.model.module.load_state_dict(torch.load(save_path))
+            
+            # Do evaluation on the loaded model
+            predictions = run_validation(self.model, self.loss_fn, kettle.validloader,
+                                            kettle.poison_setup['poison_class'],
+                                            kettle.poison_setup['source_class'],
+                                            kettle.setup)
+                
+            source_adv_acc, source_adv_loss, source_clean_acc, source_clean_loss = check_sources(
+                self.model, self.loss_fn, kettle.source_testloader, kettle.poison_setup['poison_class'],
+                kettle.setup)
+            
+            suspicion_rate, false_positive_rate = check_suspicion(self.model, kettle.suspicionloader, kettle.fploader, kettle.poison_setup['target_class'], kettle.setup)
+            
+            valid_loss, valid_acc, valid_acc_target, valid_acc_source = predictions['all']['loss'], predictions['all']['avg'], predictions['target']['avg'], predictions['source']['avg']
+            if self.rank == None or self.rank == 0: 
+                write('------------- Validation -------------', self.args.output)
+                write(f'Validation  loss : {valid_loss:7.4f} | Validation accuracy: {valid_acc:7.4%}', self.args.output)
+                write(f'Target val. acc  : {valid_acc_target:7.4%} | Source val accuracy: {valid_acc_source:7.4%}', self.args.output)
+                for source_class in source_adv_acc.keys():
+                    backdoor_acc, clean_acc, backdoor_loss, clean_loss = source_adv_acc[source_class], source_clean_acc[source_class], source_adv_loss[source_class], source_clean_loss[source_class]
+                    if source_class != 'avg':
+                        write(f'Source class: {source_class}', self.args.output)
+                    else:
+                        write(f'Average:', self.args.output)
+                    write('Backdoor loss: {:7.4f} | Backdoor acc: {:7.4%}'.format(backdoor_loss, backdoor_acc), self.args.output)
+                    write('Clean    loss: {:7.4f} | Clean    acc: {:7.4%}'.format(clean_loss, clean_acc), self.args.output)
+                write('--------------------------------------', self.args.output)
+                write(f'False positive rate: {false_positive_rate:7.4%} | Suspicion rate: {suspicion_rate:7.4%}', self.args.output)
+            
         
         if self.args.load_feature_repr:
             self.save_feature_representation()

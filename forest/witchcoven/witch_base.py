@@ -54,32 +54,7 @@ class _Witch():
         self.retain = True if self.args.ensemble > 1 else False
         self.stat_optimal_loss = None
 
-    """ BREWING RECIPES """
-
     def brew(self, victim, kettle):
-        """Recipe interface."""
-        if len(kettle.poisonset) > 0:
-            if len(kettle.source_testset) > 0:
-                if self.args.eps > 0:
-                    if self.args.alpha > 0:
-                        poison_delta = self._brew(victim, kettle)
-                    else:
-                        poison_delta = kettle.initialize_poison(initializer='zero')
-                        warnings.warn('No poison budget given. Nothing can be poisoned.')
-                else:
-                    poison_delta = kettle.initialize_poison(initializer='zero')
-                    warnings.warn('Perturbation interval is empty. Nothing can be poisoned.')
-            else:
-                poison_delta = kettle.initialize_poison(initializer='zero')
-                warnings.warn('Source set is empty. Nothing can be poisoned.')
-        else:
-            poison_delta = kettle.initialize_poison(initializer='zero')
-            warnings.warn('Poison set is empty. Nothing can be poisoned.')
-
-        return poison_delta
-
-
-    def _brew(self, victim, kettle):
         """Run generalized iterative routine."""
         # if victim.rank == 0 or victim.rank == None: write(f'Starting crafting poisons ...', self.args.output)
         self._initialize_brew(victim, kettle)
