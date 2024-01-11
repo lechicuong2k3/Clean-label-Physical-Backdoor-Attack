@@ -19,8 +19,8 @@ os.environ["CUDA_VISIBLE_DEVICES"]="0"
 # Parse input arguments
 args = forest.options().parse_args()
 
-if args.test:
-    parent_dir = os.path.join(os.getcwd(), 'test')
+if args.exp_name is not None:
+    parent_dir = os.path.join(os.getcwd(), f'outputs_{args.exp_name}')
 else:
     parent_dir = os.path.join(os.getcwd(), 'outputs')
 
