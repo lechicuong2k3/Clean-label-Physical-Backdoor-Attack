@@ -142,7 +142,6 @@ class _Witch():
         if self.args.pmix:
             self.extra_data = iter(kettle.trainloader)
 
-
     def _run_trial(self, victim, kettle):
         """Run a single trial. Perform one round of poisoning."""
         poison_delta = kettle.initialize_poison() # Initialize poison mask of shape [num_poisons, channels, height, width] with values in [-eps, eps]
