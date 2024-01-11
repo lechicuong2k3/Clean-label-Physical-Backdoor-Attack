@@ -91,6 +91,18 @@ class Subset(torch.utils.data.Dataset):
         if transform != None:
             self.dataset.transform = self.transform 
     
+    def get_target(self, index):
+        """Return only the target and its id.
+
+        Args:
+            index (int): Index
+
+        Returns:
+            tuple: (target, idx) where target is class_index of the target class.
+
+        """
+        return self.dataset.get_target(self.indices[index])
+    
     def __getitem__(self, idx):
         if isinstance(idx, list):
             raise TypeError('Index cannot be a list')
@@ -180,6 +192,23 @@ class ConcatDataset(torch.utils.data.ConcatDataset):
             sample_idx = idx - self.cumulative_sizes[dataset_idx - 1]
         
         return self.datasets[dataset_idx][sample_idx][0], self.datasets[dataset_idx][sample_idx][1], idx
+
+    def get_target(self, index):
+        """Return only the target and its id.
+
+        Args:
+            index (int): Index
+
+        Returns:
+            tuple: (target, idx) where target is class_index of the target class.
+
+        """
+        if index < len(self.datasets[0]):
+            target = self.datasets[0].get_target(index)
+        else:
+            index_in_dataset2 = index - len(self.datasets[0])
+            target = self.datasets[1].get_target(index_in_dataset2)
+        return target, index
     
     def __deepcopy__(self, memo):
         return ConcatDataset(copy.deepcopy(self.datasets), copy.deepcopy(self.transform))
