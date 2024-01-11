@@ -5,6 +5,3 @@ Number of samples that can be selected for poisoning is 220
 Starting clean training with finetuning scenario ...
 Model already exists, skipping training.
 Feature representation saved.
-
-Selecting poisons ...
-Selections strategy is max_gradient

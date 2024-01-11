@@ -1,0 +1,4 @@
+python main.py --trigger=red_headband --recipe=gradient-matching --poisonkey=5-4 --alpha=0.1 --beta=0.0 --scenario=finetuning --threatmodel=clean-single-source --defense=activation_clustering
+python main.py --trigger=red_headband --recipe=hidden-trigger --poisonkey=5-4 --alpha=0.1 --beta=0.0 --scenario=finetuning --threatmodel=clean-single-source --defense=activation_clustering
+python main.py --trigger=red_headband --recipe=label-consistent --poisonkey=1-4 --alpha=0.1 --beta=0.0 --scenario=finetuning  --threatmodel=clean-multi-source --defense=activation_clustering
+python main.py --trigger=red_headband --recipe=naive --poisonkey=1-4 --alpha=0.0 --beta=0.1 --scenario=finetuning  --threatmodel=clean-multi-source --defense=activation_clustering

@@ -10,7 +10,7 @@ torch.backends.cudnn.benchmark = BENCHMARK
 import random
 from .witch_base import _Witch
 
-class WitchHTBD(_Witch):
+class WitchOurs(_Witch):
     def _run_trial(self, victim, kettle):
         """Run a single trial."""
         poison_delta = kettle.initialize_poison()
@@ -189,22 +189,12 @@ class WitchHTBD(_Witch):
                 new_inputs[i] = inputs[input_indcs[i]]
                 new_sources[i] = sources[source_indcs[i]]
 
-            print(labels)
-            # outputs = feature_model(new_inputs)
-            # prediction = (last_layer(outputs).data.argmax(dim=1) == labels).sum()
-            # outputs_sources = feature_model(new_sources)
-            # prediction = (last_layer(outputs).data.argmax(dim=1) == labels).sum()
-            # feature_loss = (outputs - outputs_sources).pow(2).mean(dim=1).sum()
-            # feature_loss.backward(retain_graph=self.retain)
-            
             outputs = feature_model(new_inputs)
-            output_test = model(new_inputs)
             prediction = (last_layer(outputs).data.argmax(dim=1) == labels).sum()
             outputs_sources = feature_model(new_sources)
             prediction = (last_layer(outputs).data.argmax(dim=1) == labels).sum()
-            feature_loss = (outputs - outputs_sources).pow(2).mean(dim=1).sum() - 1/2*criterion(output_test, labels)
+            feature_loss = (outputs - outputs_sources).pow(2).mean(dim=1).sum()
             feature_loss.backward(retain_graph=self.retain)
-            
             return feature_loss.detach().cpu(), prediction.detach().cpu()
         return closure
 

@@ -1,0 +1,37 @@
+ResNet50 model initialized with random key 23456.
+Hyperparameters(name='conservative', epochs=40, batch_size=64, optimizer='Adam', lr=0.0001, scheduler='linear', weight_decay=0.0005, augmentations='default', privacy={'clip': None, 'noise': None, 'distribution': None}, validate=10, novel_defense=None, mixing_method=None, adaptive_attack=True, defend_features_only=False)
+Preparing dataset from source class for crafting poisons...
+Number of samples that can be selected for poisoning is 220
+Starting clean training with finetuning scenario ...
+Model already exists, skipping training.
+Feature representation saved.
+
+Selecting poisons ...
+Selections strategy is max_gradient
+22 poisons with maximum gradients selected
+Updating Kettle poison related fields ...
+
+--------------- Poisoning setup ---------------
+--Target/Poison class: 4 (long)
+--Threat model: clean-single-source
+--Poison selection: max_gradient
+--Alpha: 22 images - 10.00% of target-class trainset and 0.82% of total trainset
+--Beta: 0 images - 0.00% of target-class trainset
+
+--Source class: 5 (nhan)
+--Attacker's source_trainset: 230 images
+--Attacker's source_testset: 230 images
+----------------------------------------------
+
+Source Grad Norm is 356.80108642578125
+Poisoning number 0
+Iteration 0 | Poisoning learning rate: 0.09997557473810371 | Passenger loss: 11.9114
+Iteration 10 | Poisoning learning rate: 0.09707359806323416 | Passenger loss: -1.0296
+Iteration 20 | Poisoning learning rate: 0.08961267311259667 | Passenger loss: -2.5754
+Iteration 30 | Poisoning learning rate: 0.07832312720368048 | Passenger loss: -1.5474
+Iteration 40 | Poisoning learning rate: 0.06431005974894186 | Passenger loss: -1.3241
+Iteration 50 | Poisoning learning rate: 0.04894516742563265 | Passenger loss: -3.2080
+Iteration 60 | Poisoning learning rate: 0.03373247294785808 | Passenger loss: -2.2457
+Iteration 70 | Poisoning learning rate: 0.02016110084417766 | Passenger loss: -4.3007
+Iteration 80 | Poisoning learning rate: 0.009559511573409195 | Passenger loss: -2.0265
+Iteration 90 | Poisoning learning rate: 0.002965462558991324 | Passenger loss: -2.1122
