@@ -1,7 +1,0 @@
-Thursday, 11. January 2024 01:01PM
------------------- Currently evaluating naive ------------------
-ResNet50 model initialized with random key 23456.
-Hyperparameters(name='conservative', epochs=40, batch_size=64, optimizer='Adam', lr=0.0001, scheduler='linear', weight_decay=0.0005, augmentations='default', privacy={'clip': None, 'noise': None, 'distribution': None}, validate=10, novel_defense=None, mixing_method=None, adaptive_attack=True, defend_features_only=False)
-
-Initializing poison data with random seed 12345
-Add 26 images of target class with physical trigger to training set.

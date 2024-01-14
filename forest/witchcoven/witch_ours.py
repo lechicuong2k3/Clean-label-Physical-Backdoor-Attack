@@ -10,7 +10,7 @@ torch.backends.cudnn.benchmark = BENCHMARK
 import random
 from .witch_base import _Witch
 
-class WitchHTBD(_Witch):
+class WitchOurs(_Witch):
     def _run_trial(self, victim, kettle):
         """Run a single trial."""
         poison_delta = kettle.initialize_poison()
@@ -155,7 +155,7 @@ class WitchHTBD(_Witch):
             else:
                 criterion = loss_fn
 
-            closure = self._define_objective(inputs, labels, criterion, sources, source_class=kettle.poison_setup['source_class'][0], target_class=kettle.poison_setup['target_class'])
+            closure = self._define_objective(inputs, labels, criterion, sources)
             loss, prediction = victim.compute(closure, self.source_grad, self.source_clean_grad, self.source_gnorm)
 
             if self.args.clean_grad:
@@ -177,7 +177,7 @@ class WitchHTBD(_Witch):
 
         return loss.item(), prediction.item()
 
-    def _define_objective(self, inputs, labels, criterion, sources, source_class, target_class):
+    def _define_objective(self, inputs, labels, criterion, sources):
         """Implement the closure here."""
         def closure(model, optimizer, source_grad, source_clean_grad, source_gnorm):
             """This function will be evaluated on all GPUs."""  # noqa: D401
@@ -189,15 +189,6 @@ class WitchHTBD(_Witch):
                 new_inputs[i] = inputs[input_indcs[i]]
                 new_sources[i] = sources[source_indcs[i]]
 
-            ### Modification  
-            # source_labels = torch.tensor([source_class] * new_inputs.shape[0], dtype=torch.long, device=self.setup['device'])
-            # outputs_target_feature = feature_model(new_inputs)
-            # prediction = (last_layer(outputs_target_feature).data.argmax(dim=1) == labels).sum()
-            # outputs_target_softmax = model(new_inputs)
-            # outputs_source_feature = feature_model(new_inputs)
-            # feature_loss = (outputs_target_feature - outputs_source_feature).pow(2).mean(dim=1).sum() + 0.1 * criterion(outputs_target_softmax, source_labels)
-            # feature_loss.backward(retain_graph=self.retain)
-            ###
             outputs = feature_model(new_inputs)
             prediction = (last_layer(outputs).data.argmax(dim=1) == labels).sum()
             outputs_sources = feature_model(new_sources)

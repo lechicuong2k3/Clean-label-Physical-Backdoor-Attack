@@ -1,1 +1,0 @@
-python main.py --trigger=red_headband --recipe=hidden-trigger --poisonkey=5-4 --alpha=0.25 --beta=0.0 --scenario=finetuning  --threatmodel=clean-single-source

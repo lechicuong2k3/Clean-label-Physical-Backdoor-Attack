@@ -1,7 +1,0 @@
-ResNet50 model initialized with random key 23456.
-Hyperparameters(name='conservative', epochs=40, batch_size=64, optimizer='Adam', lr=0.0001, scheduler='linear', weight_decay=0.0005, augmentations='default', privacy={'clip': None, 'noise': None, 'distribution': None}, validate=10, novel_defense=None, mixing_method=None, adaptive_attack=True, defend_features_only=False)
-Preparing dataset from source class for crafting poisons...
-Number of samples that can be selected for poisoning is 258
-Starting clean training with finetuning scenario ...
-Model already exists, skipping training.
-Feature representation saved.
