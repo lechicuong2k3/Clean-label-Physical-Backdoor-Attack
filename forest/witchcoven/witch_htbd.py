@@ -190,20 +190,20 @@ class WitchHTBD(_Witch):
                 new_sources[i] = sources[source_indcs[i]]
 
             ### Modification  
-            source_labels = torch.tensor([source_class] * new_inputs.shape[0], dtype=torch.long, device=self.setup['device'])
-            outputs_target_feature = feature_model(new_inputs)
-            prediction = (last_layer(outputs_target_feature).data.argmax(dim=1) == labels).sum()
-            outputs_target_softmax = model(new_inputs)
-            outputs_source_feature = feature_model(new_inputs)
-            feature_loss = (outputs_target_feature - outputs_source_feature).pow(2).mean(dim=1).sum() + 0.1 * criterion(outputs_target_softmax, source_labels)
-            feature_loss.backward(retain_graph=self.retain)
-            ###
-            # outputs = feature_model(new_inputs)
-            # prediction = (last_layer(outputs).data.argmax(dim=1) == labels).sum()
-            # outputs_sources = feature_model(new_sources)
-            # prediction = (last_layer(outputs).data.argmax(dim=1) == labels).sum()
-            # feature_loss = (outputs - outputs_sources).pow(2).mean(dim=1).sum()
+            # source_labels = torch.tensor([source_class] * new_inputs.shape[0], dtype=torch.long, device=self.setup['device'])
+            # outputs_target_feature = feature_model(new_inputs)
+            # prediction = (last_layer(outputs_target_feature).data.argmax(dim=1) == labels).sum()
+            # outputs_target_softmax = model(new_inputs)
+            # outputs_source_feature = feature_model(new_inputs)
+            # feature_loss = (outputs_target_feature - outputs_source_feature).pow(2).mean(dim=1).sum() + 0.1 * criterion(outputs_target_softmax, source_labels)
             # feature_loss.backward(retain_graph=self.retain)
+            ###
+            outputs = feature_model(new_inputs)
+            prediction = (last_layer(outputs).data.argmax(dim=1) == labels).sum()
+            outputs_sources = feature_model(new_sources)
+            prediction = (last_layer(outputs).data.argmax(dim=1) == labels).sum()
+            feature_loss = (outputs - outputs_sources).pow(2).mean(dim=1).sum()
+            feature_loss.backward(retain_graph=self.retain)
             return feature_loss.detach().cpu(), prediction.detach().cpu()
         return closure
 

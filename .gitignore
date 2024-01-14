@@ -11,3 +11,5 @@ idea_2
 results
 label_consistant
 .gitignore
+*.txt
+down.py
