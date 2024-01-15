@@ -15,7 +15,7 @@ def options():
     parser.add_argument('--f')
     # Central:
     parser.add_argument('--net', default='ResNet50', type=lambda s: [str(item) for item in s.split(',')])
-    parser.add_argument('--dataset', default='Facial_recognition_partial', type=str, choices=['Facial_recognition', 'Object_detection'])
+    parser.add_argument('--dataset', default='Facial_recognition_crop_partial', type=str, choices=['Facial_recognition', 'Object_detection'])
     parser.add_argument('--recipe', default='gradient-matching', type=str, choices=['gradient-matching', 'gradient-matching-private', 
                                                                                     'hidden-trigger', 'hidden-trigger-mt' 'gradient-matching-mt',
                                                                                     'patch', 'gradient-matching-hidden', 'naive', 'label-consistent'])
@@ -165,6 +165,7 @@ def options():
     parser.add_argument('--retrain_max_epoch', default=30, type=int, help='Train only up to this epoch for retraining during crafting.')
     parser.add_argument('--retrain_scenario', default='from-scratch', type=str, choices=['from-scratch', 'finetuning', 'transfer'], help='Scenario for retraining and evaluating on the poisoned dataset')
     parser.add_argument('--load_feature_repr', default=True, action='store_true', help='Load feature representation of the model trained on clean data')
+    parser.add_argument('--load_trained_model', default=False, action='store_true', help='Load trained model on clean data')
     parser.add_argument('--trigger', default='real_beard', type=str, help='Trigger type')
     parser.add_argument('--digital_trigger', action='store_true', default=False, help='Adding digital trigger instead of physical ones')
     parser.add_argument('--digital_trigger_path', default='digital_triggers')
