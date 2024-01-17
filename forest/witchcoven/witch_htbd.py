@@ -13,8 +13,13 @@ from .witch_base import _Witch
 class WitchHTBD(_Witch):
     def _run_trial(self, victim, kettle):
         """Run a single trial."""
+        if self.args.backdoor_finetuning:
+            self.backdoor_finetuning(victim.model, kettle, lr=0.0001, num_epoch=15)
+            write("\n", self.args.output)
+        
         poison_delta = kettle.initialize_poison()
         dataloader = kettle.poisonloader
+        # self.args.poison_scheduler = 'linear' # Fix linear scheduler for HTBD
 
         validated_batch_size = max(min(kettle.args.pbatch, len(kettle.poisonset)), 1)
 
@@ -24,14 +29,16 @@ class WitchHTBD(_Witch):
                 att_optimizer = torch.optim.Adam([poison_delta], lr=self.tau0, weight_decay=0)
             else:
                 att_optimizer = torch.optim.SGD([poison_delta], lr=self.tau0, momentum=0.9, weight_decay=0)
+                
             if self.args.scheduling:
                 if self.args.poison_scheduler == 'linear':
                     scheduler = torch.optim.lr_scheduler.MultiStepLR(att_optimizer, milestones=[self.args.attackiter // 2.667, self.args.attackiter // 1.6,
                                                                                             self.args.attackiter // 1.142], gamma=0.1)
                 elif self.args.poison_scheduler == 'cosine':
-                    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(att_optimizer, T_0=100, T_mult=1, eta_min=0.001)
+                    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(att_optimizer, T_0=250, T_mult=1, eta_min=0.001)
                 else:
                     raise ValueError('Unknown poison scheduler.')
+                
             poison_delta.grad = torch.zeros_like(poison_delta)
             dm, ds = kettle.dm.to(device=torch.device('cpu')), kettle.ds.to(device=torch.device('cpu'))
             poison_bounds = torch.zeros_like(poison_delta)
@@ -202,7 +209,8 @@ class WitchHTBD(_Witch):
             prediction = (last_layer(outputs).data.argmax(dim=1) == labels).sum()
             outputs_sources = feature_model(new_sources)
             prediction = (last_layer(outputs).data.argmax(dim=1) == labels).sum()
-            feature_loss = (outputs - outputs_sources).pow(2).mean(dim=1).sum()
+            # feature_loss = (outputs - outputs_sources).pow(2).mean(dim=1).sum()
+            feature_loss = torch.nn.L1Loss()(outputs, outputs_sources)
             feature_loss.backward(retain_graph=self.retain)
             return feature_loss.detach().cpu(), prediction.detach().cpu()
         return closure

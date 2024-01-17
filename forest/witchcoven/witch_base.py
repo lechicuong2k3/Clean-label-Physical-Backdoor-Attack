@@ -13,6 +13,7 @@ from ..victims.batched_attacks import construct_attack
 from ..victims.training import _split_data, check_sources
 from PIL import Image
 from torchvision.transforms import v2
+from forest.data.datasets import data_transforms
 
 
 
@@ -75,6 +76,51 @@ class _Witch():
 
         return poison_delta # Return the best poison perturbation amont the restarts
 
+    def backdoor_finetuning(self, model, kettle, num_epoch=10, lr=0.0001, mu=1):
+        """Finetuning on triggerset of both target class and source class"""
+
+        parameters_except_last_layer = list(model.parameters())[:-1]  
+        original_params = [p.clone().detach().data for p in parameters_except_last_layer]
+        
+        write("\nBegin backdoor finetuning ...", self.args.output)
+
+        source_class = kettle.poison_setup['source_class'][0]
+        target_class = kettle.poison_setup['target_class']
+        
+        finetune_idcs = kettle.triggerset_dist[source_class] + kettle.triggerset_dist[target_class]
+        finetune_set = datasets.Subset(kettle.triggerset, finetune_idcs, transform=copy.deepcopy(data_transforms['train']))
+        finetune_loader = torch.utils.data.DataLoader(finetune_set, batch_size=16, shuffle=True, num_workers=3)
+        
+        loss_fn = torch.nn.CrossEntropyLoss()
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epoch, eta_min=lr*0.01)
+        for epoch in range(num_epoch):
+            total_loss, total_corrects, totals = 0, 0, 0
+            for (data, target, idx) in finetune_loader:
+                optimizer.zero_grad()
+                data, target = data.to(self.setup['device']), target.to(self.setup['device'])
+                output = model(data)
+                
+                predictions = torch.argmax(output.data, dim=1)
+                correct_preds = (predictions == target).sum().item()
+                
+                loss = loss_fn(output, target)
+                for new_param, ori_param in zip(list(model.parameters())[:-1], original_params):
+                    loss += mu * torch.nn.L1Loss()(new_param, ori_param)
+            
+                loss.backward()
+                
+                total_loss += loss.item() * data.shape[0] 
+                total_corrects += correct_preds
+                totals += data.shape[0]
+                
+                optimizer.step()
+                scheduler.step()
+            
+            total_loss /= totals
+            total_corrects /= totals
+            write(f"Epoch {epoch} Loss: {total_loss} | Accuracy: {total_corrects}", self.args.output)
+            if total_loss < 1e-2 or total_corrects >=0.95: break
 
     def _initialize_brew(self, victim, kettle):
         """Implement common initialization operations for brewing."""
@@ -144,6 +190,10 @@ class _Witch():
 
     def _run_trial(self, victim, kettle):
         """Run a single trial. Perform one round of poisoning."""
+        if self.args.backdoor_finetuning:
+            self.backdoor_finetuning(victim.model, kettle, lr=0.0001, num_epoch=15)
+            write("\n", self.args.output)
+            
         poison_delta = kettle.initialize_poison() # Initialize poison mask of shape [num_poisons, channels, height, width] with values in [-eps, eps]
         if self.args.full_data:
             dataloader = kettle.trainloader

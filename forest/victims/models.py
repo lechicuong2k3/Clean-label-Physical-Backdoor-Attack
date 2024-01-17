@@ -25,23 +25,19 @@ def bypass_last_layer(model):
 def get_model(model_name, num_classes=10, pretrained=True):
     """Get model instance (ResNet50, VGG16, DenseNet121)"""
     if model_name.lower() == 'resnet50':
-        # model = models.resnet50(weights='DEFAULT')
         model = resnet50(num_classes=8631) # 8631 is the number of classes in VGGFace2
         if pretrained: 
             load_state_dict(model, 'pretrained/resnet50_vgg_face2.pkl')
         num_ftrs = model.fc.in_features
         model.fc = nn.Linear(in_features=num_ftrs, out_features=num_classes)   
-    elif model_name.lower() == 'vgg16':
-        model = models.vgg16(weights="DEFAULT" if pretrained else None)
-        model.classifier[6] = nn.Linear(in_features=4096, out_features=num_classes)
+    elif model_name.lower() == 'vgg16':  
+        if pretrained:
+            model = vgg_face_dag(weights_path='pretrained/vgg_face_dag.pth')
+        else:
+            model = vgg_face_dag(weights_path=None)
         
-        # if pretrained:
-        #     model = vgg_face_dag(weights_path='pretrained/vgg_face_dag.pth')
-        # else:
-        #     model = vgg_face_dag(weights_path=None)
-        
-        # num_ftrs = model.fc8.in_features
-        # model.fc8 = nn.Linear(in_features=num_ftrs, out_features=num_classes) 
+        num_ftrs = model.fc8.in_features
+        model.fc8 = nn.Linear(in_features=num_ftrs, out_features=num_classes) 
     elif model_name.lower() == 'densenet121':
         raise NotImplementedError('DenseNet121 not implemented')
     else:

@@ -626,6 +626,10 @@ class KettleSingle():
         
         self.source_test_num = len(triggerset_source_idcs)
         trigger_trainset_idcs = random.sample(triggerset_source_idcs, int(self.args.sources_train_rate * len(triggerset_source_idcs)))
+        if self.args.target_train_rate > 0.0:
+            triggerset_target_idcs = random.sample(self.trainset_distribution[self.poison_setup['target_class']], int(self.args.target_train_rate * len(self.trainset_distribution[self.poison_setup['target_class']])))
+            trigger_trainset_idcs.extend(triggerset_target_idcs)
+        
         self.source_train_num = len(trigger_trainset_idcs)
         self.source_trainset = Subset(self.triggerset, trigger_trainset_idcs, transform=train_transform)
 
