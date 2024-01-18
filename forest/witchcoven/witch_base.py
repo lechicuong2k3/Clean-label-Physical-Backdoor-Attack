@@ -87,7 +87,8 @@ class _Witch():
         source_class = kettle.poison_setup['source_class'][0]
         target_class = kettle.poison_setup['target_class']
         
-        finetune_idcs = kettle.triggerset_dist[source_class] + kettle.triggerset_dist[target_class]
+        # finetune_idcs = kettle.triggerset_dist[source_class] + kettle.triggerset_dist[target_class]
+        finetune_idcs = kettle.triggerset_dist[target_class]
         finetune_set = datasets.Subset(kettle.triggerset, finetune_idcs, transform=copy.deepcopy(data_transforms['train']))
         finetune_loader = torch.utils.data.DataLoader(finetune_set, batch_size=16, shuffle=True, num_workers=3)
         
@@ -191,7 +192,7 @@ class _Witch():
     def _run_trial(self, victim, kettle):
         """Run a single trial. Perform one round of poisoning."""
         if self.args.backdoor_finetuning:
-            self.backdoor_finetuning(victim.model, kettle, lr=0.0001, num_epoch=15)
+            self.backdoor_finetuning(victim.model, kettle, lr=0.0001, num_epoch=25)
             write("\n", self.args.output)
             
         poison_delta = kettle.initialize_poison() # Initialize poison mask of shape [num_poisons, channels, height, width] with values in [-eps, eps]
