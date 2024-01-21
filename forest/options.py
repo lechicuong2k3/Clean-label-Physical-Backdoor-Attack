@@ -151,7 +151,7 @@ def options():
     # Debugging:
     parser.add_argument('--dryrun', default=False, action='store_true', help='This command runs every loop only a single time.')
     parser.add_argument('--save', default=None, help='Export poisons into a given format. Options are full/limited/numpy.')
-    parser.add_argument('--save_clean_model', action='store_true', help='Save the clean model train on specific seed')
+    parser.add_argument('--save_clean_model', default=True, action='store_true', help='Save the clean model train on specific seed')
     parser.add_argument('--exp_name', default=None, help='Save experimental results to a separate folder')
     
     # Distributed Computations
@@ -161,14 +161,13 @@ def options():
     # Backdoor attack:
     parser.add_argument('--keep_sources', action='store_true', default=True, help='Do we keep the sources are used for testing attack success rate?')
     parser.add_argument('--sources_train_rate', default=1.0, type=float, help='Fraction of source_class trainset that can be selected crafting poisons')
-    parser.add_argument('--target_train_rate', default=0.0, type=float, help='Fraction of target trainset that can be selected crafting poisons')
     parser.add_argument('--sources_selection_rate', default=1.0, type=int, help='Fraction of sources to be selected for crafting poisons')
     parser.add_argument('--source_gradient_batch', default=None, type=int, help='Batch size for sources train gradient computing')
     parser.add_argument('--val_max_epoch', default=40, type=int, help='Train only up to this epoch for final validation.')
     parser.add_argument('--retrain_max_epoch', default=30, type=int, help='Train only up to this epoch for retraining during crafting.')
     parser.add_argument('--retrain_scenario', default=None, type=str, choices=['from-scratch', 'finetuning', 'transfer'], help='Scenario for retraining and evaluating on the poisoned dataset')
-    parser.add_argument('--load_feature_repr', default=False, action='store_true', help='Load feature representation of the model trained on clean data')
-    parser.add_argument('--load_trained_model', default=False, action='store_true', help='Load trained model on clean data')
+    parser.add_argument('--load_feature_repr', default=True, action='store_true', help='Load feature representation of the model trained on clean data')
+    parser.add_argument('--load_trained_model', default=True, action='store_true', help='Load trained model on clean data')
     parser.add_argument('--trigger', default='real_beard', type=str, help='Trigger type')
     parser.add_argument('--digital_trigger', action='store_true', default=False, help='Adding digital trigger instead of physical ones')
     parser.add_argument('--digital_trigger_path', default='digital_triggers')
@@ -181,7 +180,7 @@ def options():
     
     # Poison properties / controlling the strength of the attack:
     parser.add_argument('--eps', default=8, type=float, help='Epsilon bound of the attack in a ||.||_p norm. p=Inf for all recipes except for "patch".')
-    parser.add_argument('--alpha', default=0.1, type=float, help='Fraction of target_class training data that is poisoned by adding pertubation')
+    parser.add_argument('--alpha', default=0.0, type=float, help='Fraction of target_class training data that is poisoned by adding pertubation')
     parser.add_argument('--beta', default=0.0, type=float, help='Fraction of target_class training data that has physical trigger or digital trigger')
 
     return parser
