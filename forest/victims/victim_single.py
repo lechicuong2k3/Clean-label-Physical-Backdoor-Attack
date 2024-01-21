@@ -34,9 +34,8 @@ class _VictimSingle(_VictimBase):
             self.model_init_seed = seed
             
         set_random_seed(self.model_init_seed)
-        self._initialize_model(self.args.net[0], mode=self.args.scenario)
-        self.epoch = 1
-
+        self.model, self.defs, self.optimizer, self.scheduler = self._initialize_model(self.args.net[0], mode=self.args.scenario)
+            
         self.model.to(**self.setup)
         if self.setup['device'] == 'cpu' and torch.cuda.device_count() > 1:
             self.model = torch.nn.DataParallel(self.model)
@@ -83,24 +82,6 @@ class _VictimSingle(_VictimBase):
         write(f'{self.args.net[0]} last layer re-initialized with random key {self.model_init_seed}.', self.args.output)
         write(repr(self.defs), self.args.output)
 
-    def freeze_feature_extractor(self):
-        """Freezes all parameters and then unfreeze the last layer."""
-        if isinstance(self.model, torch.nn.DataParallel) or isinstance(self.model, torch.nn.parallel.DistributedDataParallel):
-            self.model.module.frozen = True
-            for param in self.model.module.parameters():
-                param.requires_grad = False
-    
-            for param in list(self.model.module.children())[-1].parameters():
-                param.requires_grad = True
-        
-        else:
-            self.model.frozen = True
-            for param in self.model.parameters():
-                param.requires_grad = False
-    
-            for param in list(self.model.children())[-1].parameters():
-                param.requires_grad = True
-
     def save_feature_representation(self):
         self.clean_model = copy.deepcopy(self.model)
 
@@ -108,7 +89,6 @@ class _VictimSingle(_VictimBase):
         self.model = copy.deepcopy(self.clean_model)
 
     """ METHODS FOR (CLEAN) TRAINING AND TESTING OF BREWED POISONS"""
-
     def _iterate(self, kettle, poison_delta, max_epoch=None):
         """Validate a given poison by training the model and checking source accuracy."""
         if max_epoch is None:

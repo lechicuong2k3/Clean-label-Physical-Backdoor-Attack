@@ -1,5 +1,0 @@
-Sunday, 14. January 2024 07:31PM
------------------- Currently evaluating gradient-matching ------------------
-Data augmentations are disabled.
-
-Initializing poison data with random seed 12345

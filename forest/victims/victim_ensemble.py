@@ -11,8 +11,8 @@ from math import ceil
 from .models import get_model
 from ..hyperparameters import training_strategy
 from .training import get_optimizers, run_step
-from ..utils import set_random_seed, average_dicts
-from ..consts import BENCHMARK
+from ..utils import set_random_seed, write
+from ..consts import BENCHMARK, FINETUNING_LR_DROP
 from .context import GPUContext
 torch.backends.cudnn.benchmark = BENCHMARK
 
@@ -34,20 +34,25 @@ class _VictimEnsemble(_VictimBase):
         else:
             self.model_init_seed = seed
         set_random_seed(self.model_init_seed)
+        
         print(f'Initializing ensemble from random key {self.model_init_seed}.')
+        write(f'Initializing ensemble from random key {self.model_init_seed}.', self.args.output)
 
         self.models, self.definitions, self.optimizers, self.schedulers, self.epochs = [], [], [], [], []
         for idx in range(self.args.ensemble):
             model_name = self.args.net[idx % len(self.args.net)]
             model, defs, optimizer, scheduler = self._initialize_model(model_name, mode=self.args.scenario)
+            
             self.models.append(model)
             self.definitions.append(defs)
             self.optimizers.append(optimizer)
             self.schedulers.append(scheduler)
+                
             print(f'{model_name} initialized as model {idx}')
+            write(f'{model_name} initialized as model {idx}', self.args.output)
             print(repr(defs))
+            write(repr(defs), self.args.output)
         self.defs = self.definitions[0]
-        self.epoch = 1
 
     def reinitialize_last_layer(self, reduce_lr_factor=1.0, seed=None, keep_last_layer=False):
         if self.args.model_seed is None:
@@ -58,7 +63,6 @@ class _VictimEnsemble(_VictimBase):
         else:
             self.model_init_seed = self.args.model_seed
         set_random_seed(self.model_init_seed)
-
 
         for idx in range(self.args.ensemble):
             model_name = self.args.net[idx % len(self.args.net)]
@@ -78,19 +82,8 @@ class _VictimEnsemble(_VictimBase):
             self.definitions[idx] = training_strategy(model_name, self.args)
             self.definitions[idx].lr *= reduce_lr_factor
             self.optimizers[idx], self.schedulers[idx] = get_optimizers(self.models[idx], self.args, self.definitions[idx])
-            print(f'{model_name} with id {idx}: linear layer reinitialized.')
-            print(repr(self.definitions[idx]))
-
-
-    def freeze_feature_extractor(self):
-        """Freezes all parameters and then unfreeze the last layer."""
-        for model in self.models:
-            model.frozen = True
-            for param in model.parameters():
-                param.requires_grad = False
-
-            for param in list(model.children())[-2].parameters():
-                param.requires_grad = True
+            write(f'{model_name} with id {idx}: linear layer reinitialized.', self.args.output)
+            write(repr(self.definitions[idx]), self.args.output)
 
     def save_feature_representation(self):
         self.clean_models = []
@@ -112,20 +105,16 @@ class _VictimEnsemble(_VictimBase):
         # Only partially train ensemble for poisoning if no poison is present
         if max_epoch is None:
             max_epoch = self.defs.epochs
-        if poison_delta is None and self.args.stagger is not None:
-            if self.args.stagger == 'firstn':
-                stagger_list = [int(epoch) for epoch in range(self.args.ensemble)]
-            elif self.args.stagger == 'full':
-                stagger_list = [int(epoch) for epoch in np.linspace(0, max_epoch, self.args.ensemble)]
-            elif self.args.stagger == 'inbetween':
-                stagger_list = [int(epoch) for epoch in np.linspace(0, max_epoch, self.args.ensemble + 2)[1:-1]]
-            else:
-                raise ValueError(f'Invalid stagger option {self.args.stagger}')
-            print(f'Staggered pretraining to {stagger_list}.')
+        if poison_delta is None and self.args.stagger:
+            # stagger_list = [int(epoch) for epoch in np.linspace(0, max_epoch, self.args.ensemble)]
+            # stagger_list = [int(epoch) for epoch in np.linspace(0, max_epoch, self.args.ensemble + 2)[1:-1]]
+            stagger_list = [int(epoch) for epoch in range(self.args.ensemble)]
+            write(f'Staggered pretraining to {stagger_list}.', self.args.output)
         else:
             stagger_list = [max_epoch] * self.args.ensemble
-            
+
         for idx, single_model in enumerate(zip(*multi_model_setup)):
+            write(f"\nTraining model {idx}...")
             model, defs, optimizer, scheduler = single_model
 
             # Move to GPUs
@@ -133,8 +122,9 @@ class _VictimEnsemble(_VictimBase):
             if torch.cuda.device_count() > 1:
                 model = torch.nn.DataParallel(model)
                 model.frozen = model.module.frozen
-
-            for epoch in range(stagger_list[idx]):
+            
+            defs.epochs = max_epoch
+            for epoch in range(1, stagger_list[idx]+1):
                 run_step(kettle, poison_delta, epoch, *single_model)
                 if self.args.dryrun:
                     break
@@ -163,11 +153,11 @@ class _VictimEnsemble(_VictimBase):
             if torch.cuda.device_count() > 1:
                 model = torch.nn.DataParallel(model)
                 model.frozen = model.module.frozen
-            run_step(kettle, poison_delta, self.epochs[idx], defaultdict(list), *single_model)
+            run_step(kettle, poison_delta, self.epochs[idx], *single_model)
             self.epochs[idx] += 1
             if self.epochs[idx] > defs.epochs:
                 self.epochs[idx] = 0
-                print(f'Model {idx} reset to epoch 0.')
+                write(f'Model {idx} reset to epoch 0.', self.args.output)
                 model, defs, optimizer, scheduler = self._initialize_model(model_name)
             # Return to CPU
             if torch.cuda.device_count() > 1:
@@ -176,7 +166,6 @@ class _VictimEnsemble(_VictimBase):
             self.models[idx], self.definitions[idx], self.optimizers[idx], self.schedulers[idx] = model, defs, optimizer, scheduler
 
     """ Various Utilities."""
-
     def eval(self, dropout=False):
         """Switch everything into evaluation mode."""
         def apply_dropout(m):
@@ -186,7 +175,7 @@ class _VictimEnsemble(_VictimBase):
         [model.eval() for model in self.models]
         if dropout:
             [model.apply(apply_dropout) for model in self.models]
-
+            
     def reset_learning_rate(self):
         """Reset scheduler objects to initial state."""
         for idx in range(self.args.ensemble):
@@ -219,7 +208,7 @@ class _VictimEnsemble(_VictimBase):
                     indices = [i[0] for i in sorted(enumerate(grad_norms), key=lambda x:x[1])][-source_poison_selected:]
                     images = images[indices]
                     labels = labels[indices]
-                    print('{} sources with maximum gradients selected'.format(source_poison_selected))
+                    write('{} sources with maximum gradients selected'.format(source_poison_selected), self.args.output)
                 
                 # Using batch processing for gradients
                 if not self.args.source_gradient_batch==None:

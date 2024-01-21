@@ -10,7 +10,7 @@ import socket
 import forest
 
 from forest.filtering_defenses import get_defense
-from forest.utils import write
+from forest.utils import write, set_random_seed
 from forest.consts import BENCHMARK, NUM_CLASSES, SHARING_STRATEGY
 
 torch.backends.cudnn.benchmark = BENCHMARK
@@ -19,6 +19,9 @@ torch.cuda.empty_cache()
 
 # Parse input arguments
 args = forest.options().parse_args()
+if args.system_seed != None:
+    set_random_seed(args.system_seed)
+    
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
 os.environ["CUDA_VISIBLE_DEVICES"]="3,2,1,0"
 args.local_rank = int(os.environ['LOCAL_RANK'])

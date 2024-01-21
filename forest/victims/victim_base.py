@@ -79,9 +79,35 @@ class _VictimBase:
     def reinitialize_last_layer(self, seed=None):
         raise NotImplementedError()
 
-    def freeze_feature_extractor(self):
-        raise NotImplementedError()
-
+    def freeze_feature_extractor(self, model):
+        """Freezes all parameters and then unfreeze the last layer."""
+        if isinstance(model, torch.nn.DataParallel) or isinstance(model, torch.nn.parallel.DistributedDataParallel):
+            model.module.frozen = True
+            for param in model.module.parameters():
+                param.requires_grad = False
+    
+            for param in list(model.module.children())[-1].parameters():
+                param.requires_grad = True
+        
+        else:
+            model.frozen = True
+            for param in model.parameters():
+                param.requires_grad = False
+    
+            for param in list(model.children())[-1].parameters():
+                param.requires_grad = True
+    
+    def eval(self, model, dropout=False):
+        """Switch everything into evaluation mode."""
+        def apply_dropout(m):
+            """https://discuss.pytorch.org/t/dropout-at-test-time-in-densenet/6738/6."""
+            if type(m) == torch.nn.Dropout:
+                m.train()
+        model.eval()
+        if dropout:
+            model.apply(apply_dropout)
+            
+                
     def save_feature_representation(self):
         raise NotImplementedError()
 
@@ -90,6 +116,8 @@ class _VictimBase:
 
     def save_model(self, path):
         """Save model to path."""
+        write(f"Saving clean model to: {path}", self.args.output)
+        print(f"Saving clean model to: {path}") 
         if isinstance(self.model, torch.nn.DataParallel) or isinstance(self.model, torch.nn.parallel.DistributedDataParallel):
             torch.save(self.model.module.state_dict(), path)
         else:
@@ -103,7 +131,7 @@ class _VictimBase:
         if self.rank == None or self.rank == 0: 
             write('Starting clean training with {} scenario ...'.format(self.args.scenario), self.args.output)
         
-        save_path = os.path.join(self.args.model_savepath, self.args.net[0].upper(), "clean", f"{self.args.scenario}_{self.args.trigger}_{self.model_init_seed}_{self.args.train_max_epoch}.pth")
+        save_path = os.path.join(self.args.model_savepath, "clean", f"{self.args.net[0].upper()}_{self.args.scenario}_{self.model_init_seed}_{self.args.train_max_epoch}.pth")
         if self.args.load_trained_model and os.path.exists(save_path) == False:
             print('Cannot load model as the path does not exist.')
             self.args.load_trained_model = False
@@ -112,7 +140,8 @@ class _VictimBase:
             self._iterate(kettle, poison_delta=None, max_epoch=max_epoch) # Validate poison
             if self.args.dryrun == False:
                 os.makedirs(os.path.dirname(save_path), exist_ok=True)
-                self.save_model(save_path)
+                if self.args.ensemble == 1 and self.args.save_clean_model:
+                    self.save_model(save_path)
         else: 
             if self.rank == None or self.rank == 0: 
                 write('Model already exists, skipping training.', self.args.output)
@@ -162,6 +191,7 @@ class _VictimBase:
     def validate(self, kettle, poison_delta, val_max_epoch=None):
         """Check poison on a new initialization(s), depending on the scenario."""
 
+        self.args.ensemble = 1 # Disable ensemble for validation
         for run in range(self.args.vruns):
             # Reinitalize model with new seed
             seed = np.random.randint(0, 2**32 - 1)
@@ -171,10 +201,7 @@ class _VictimBase:
             write("Validaion {} with seed {}...".format(run+1, seed), self.args.output)
             self._iterate(kettle, poison_delta=poison_delta, max_epoch=val_max_epoch)
 
-    def eval(self, dropout=True):
-        """Switch everything into evaluation mode."""
-        raise NotImplementedError()
-
+    """ Various Utilities."""
     def _iterate(self, kettle, poison_delta):
         """Validate a given poison by training the model and checking source accuracy."""
         raise NotImplementedError()
@@ -188,15 +215,18 @@ class _VictimBase:
             pretrained = False
         else:
             pretrained = True
-        self.model = get_model(model_name, num_classes=self.num_classes, pretrained=pretrained)
-        self.model.frozen = False
+        model = get_model(model_name, num_classes=self.num_classes, pretrained=pretrained)
+        model.frozen = False
         
         # Define training routine
-        self.defs = training_strategy(model_name, self.args) # Initialize hyperparameters for training
-        if mode == 'finetuning':
-            self.defs.lr *= FINETUNING_LR_DROP
-        elif mode == 'transfer':
-            self.model.frozen = True
-            self.freeze_feature_extractor()
-            self.eval()
-        self.optimizer, self.scheduler = get_optimizers(self.model, self.args, self.defs)
+        defs = training_strategy(model_name, self.args) # Initialize hyperparameters for training
+        
+        if self.args.scenario == 'transfer':
+            model.frozen = True
+            self.freeze_feature_extractor(model)
+            self.eval(model)
+        elif self.args.scenario == 'finetuning':
+            defs.lr *= FINETUNING_LR_DROP
+        
+        optimizer, scheduler = get_optimizers(model, self.args, defs)
+        return model, defs, optimizer, scheduler

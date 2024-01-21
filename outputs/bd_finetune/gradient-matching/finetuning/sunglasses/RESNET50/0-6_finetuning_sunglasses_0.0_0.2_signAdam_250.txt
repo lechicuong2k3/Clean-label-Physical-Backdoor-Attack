@@ -1,0 +1,62 @@
+Saturday, 20. January 2024 03:41PM
+------------------ Currently evaluating gradient-matching ------------------
+ResNet50 model initialized with random key 23456.
+Hyperparameters(name='conservative', epochs=40, batch_size=64, optimizer='SGD', lr=0.0001, scheduler='linear', weight_decay=0.0005, augmentations='default', privacy={'clip': None, 'noise': None, 'distribution': None}, validate=10, novel_defense=None, mixing_method=None, adaptive_attack=True, defend_features_only=False)
+
+Initializing poison data with random seed 12345
+Starting clean training with finetuning scenario ...
+Model already exists, skipping training.
+------------- Validation -------------
+Validation  loss :  0.0509 | Validation accuracy: 98.9796%
+Target val. acc  : 100.0000% | Source val accuracy: 100.0000%
+Source class: 0
+Backdoor loss:  3.6315 | Backdoor acc: 0.9569%
+Clean    loss:  0.7592 | Clean    acc: 83.2536%
+Average:
+Backdoor loss:  3.6315 | Backdoor acc: 0.9569%
+Clean    loss:  0.7592 | Clean    acc: 83.2536%
+--------------------------------------
+False positive rate: 7.7068% | Suspicion rate: 5.0804%
+Begin backdoor finetuning ...
+Epoch 0 Loss: 0.02611634656928028 | Accuracy: 0.996969696969697
+Epoch 1 Loss: 0.0027689194405507863 | Accuracy: 1.0
+Epoch 2 Loss: 0.0024841601353590235 | Accuracy: 1.0
+Epoch 3 Loss: 0.002146205732203794 | Accuracy: 1.0
+Epoch 4 Loss: 0.0019682789969286234 | Accuracy: 1.0
+Epoch 5 Loss: 0.0017999226643675655 | Accuracy: 1.0
+Epoch 6 Loss: 0.0017376483121717518 | Accuracy: 1.0
+Epoch 7 Loss: 0.0016602039450045788 | Accuracy: 1.0
+Epoch 8 Loss: 0.0015459094937382773 | Accuracy: 1.0
+Epoch 9 Loss: 0.0015242276035926559 | Accuracy: 1.0
+Epoch 10 Loss: 0.0013990958898582242 | Accuracy: 1.0
+Epoch 11 Loss: 0.0013834840187690023 | Accuracy: 1.0
+Epoch 12 Loss: 0.0013019213572878277 | Accuracy: 1.0
+Epoch 13 Loss: 0.0012392254969613118 | Accuracy: 1.0
+Epoch 14 Loss: 0.0012187871531668035 | Accuracy: 1.0
+Epoch 15 Loss: 0.0011139995108048121 | Accuracy: 1.0
+Epoch 16 Loss: 0.0011204245429711811 | Accuracy: 1.0
+Epoch 17 Loss: 0.001034232377864872 | Accuracy: 1.0
+Epoch 18 Loss: 0.0010123972251841968 | Accuracy: 1.0
+Epoch 19 Loss: 0.0009766750344583257 | Accuracy: 1.0
+Add 107 images of target class with physical trigger to training set.
+Selecting 107 triggered samples from target class 6 for poisoning
+
+--------------- Poisoning setup ---------------
+--Target/Poison class: 6 (son)
+--Threat model: clean-single-source
+--Poison selection: max_gradient
+--Alpha: 0 images - 0.00% of target-class trainset and 0.00% of total trainset
+--Beta: 107 images - 20.00% of target-class trainset and 3.32% of total trainset
+--Total number of poisons: 107 images - 20.15% of target-class trainset and 3.32% of total trainset
+
+--Source class: 0 (chi)
+--Attacker's source_trainset: 209 images
+--Attacker's source_testset: 209 images
+----------------------------------------------
+
+Source Grad Norm is 473.17022705078125
+Poisoning number 0
+Iteration 0 | Poisoning learning rate: 0.09999609168808891 | Passenger loss: 0.3681
+Iteration 10 | Poisoning learning rate: 0.09952784057198423 | Passenger loss: 0.2508
+Iteration 20 | Poisoning learning rate: 0.09828639112224706 | Passenger loss: 0.2745
+Iteration 30 | Poisoning learning rate: 0.09629132173830568 | Passenger loss: 0.2509

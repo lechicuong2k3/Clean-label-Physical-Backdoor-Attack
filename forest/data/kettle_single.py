@@ -513,7 +513,7 @@ class KettleSingle():
         """Return a dictionary of class distribution in the dataset."""
         dist = dict()
         for i in dataset.class_to_idx.values(): dist[i] = []
-        for _, source, idx in dataset:  # we actually iterate this way not to iterate over the images
+        for _, source, idx in dataset:  
             dist[source].append(idx)
         return dist
     
@@ -578,14 +578,6 @@ class KettleSingle():
         """Set up suspicionset and false positive set"""
         test_transform = copy.deepcopy(self.validset.transform)
         
-        # suspicion_path = os.path.join(self.args.dataset, self.args.trigger, 'suspicion')
-        # self.suspicion_triggers = []
-        # datasets = []
-        # for trigger in os.listdir(suspicion_path):
-        #     self.suspicion_triggers.append(trigger)
-        #     datasets.append(ImageDataset(os.path.join(suspicion_path, trigger), transform=test_transform))
-        # suspicionset = ConcatDataset(datasets)
-        
         suspicionset = ImageDataset(os.path.join(self.args.dataset, self.args.trigger, 'suspicion', 'merge'))
         suspicionset_distribution = self.class_distribution(suspicionset)
         false_trigger_idcs = []
@@ -602,8 +594,9 @@ class KettleSingle():
         suspicionset_1 = Subset(self.triggerset, false_target_idcs)
         suspicionset_2 = Subset(suspicionset, false_trigger_idcs)
         
-        suspicionset = ConcatDataset([suspicionset_1, suspicionset_2], transform=test_transform) # Overwrite suspicionset
         fpset = Subset(suspicionset, false_positive_idcs, transform=test_transform)
+        suspicionset = ConcatDataset([suspicionset_1, suspicionset_2], transform=test_transform) # Overwrite suspicionset
+        
         
         self.suspicionloader = torch.utils.data.DataLoader(suspicionset, batch_size=128, shuffle=False, num_workers=self.num_workers)
         self.fploader = torch.utils.data.DataLoader(fpset, batch_size=128, shuffle=False, num_workers=self.num_workers)

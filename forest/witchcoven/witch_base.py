@@ -4,7 +4,7 @@ import torch
 import warnings
 import os
 import copy
-from ..utils import cw_loss, write, global_meters_all_avg
+from ..utils import cw_loss, write, global_meters_all_avg, ModifyTarget
 from ..consts import NON_BLOCKING, BENCHMARK, FINETUNING_LR_DROP
 torch.backends.cudnn.benchmark = BENCHMARK
 from forest.data import datasets
@@ -57,7 +57,6 @@ class _Witch():
 
     def brew(self, victim, kettle):
         """Run generalized iterative routine."""
-        # if victim.rank == 0 or victim.rank == None: write(f'Starting crafting poisons ...', self.args.output)
         self._initialize_brew(victim, kettle)
         poisons, scores = [], torch.ones(self.args.restarts) * 10_000
 
@@ -76,10 +75,10 @@ class _Witch():
 
         return poison_delta # Return the best poison perturbation amont the restarts
 
-    def backdoor_finetuning(self, model, kettle, num_epoch=10, lr=0.0001, mu=1):
+    def backdoor_finetuning(self, victim, kettle, num_epoch=10, lr=0.0001, mu=1):
         """Finetuning on triggerset of both target class and source class"""
 
-        parameters_except_last_layer = list(model.parameters())[:-1]  
+        parameters_except_last_layer = list(victim.model.parameters())[:-1]  
         original_params = [p.clone().detach().data for p in parameters_except_last_layer]
         
         write("\nBegin backdoor finetuning ...", self.args.output)
@@ -87,26 +86,31 @@ class _Witch():
         source_class = kettle.poison_setup['source_class'][0]
         target_class = kettle.poison_setup['target_class']
         
-        # finetune_idcs = kettle.triggerset_dist[source_class] + kettle.triggerset_dist[target_class]
+        # finetune_idcs = kettle.triggerset_dist[target_class] + kettle.triggerset_dist[source_class] 
+        # finetune_idcs = kettle.triggerset_dist[source_class]     
         finetune_idcs = kettle.triggerset_dist[target_class]
-        finetune_set = datasets.Subset(kettle.triggerset, finetune_idcs, transform=copy.deepcopy(data_transforms['train']))
+            
+        dirty_triggerset = copy.deepcopy(kettle.triggerset)
+        # dirty_triggerset.target_transform = v2.Compose([ModifyTarget(target_class)])
+        
+        finetune_set = datasets.Subset(dirty_triggerset, finetune_idcs, transform=copy.deepcopy(data_transforms['train']))
         finetune_loader = torch.utils.data.DataLoader(finetune_set, batch_size=16, shuffle=True, num_workers=3)
         
         loss_fn = torch.nn.CrossEntropyLoss()
-        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+        optimizer = torch.optim.Adam(parameters_except_last_layer, lr=lr)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epoch, eta_min=lr*0.01)
         for epoch in range(num_epoch):
             total_loss, total_corrects, totals = 0, 0, 0
             for (data, target, idx) in finetune_loader:
                 optimizer.zero_grad()
                 data, target = data.to(self.setup['device']), target.to(self.setup['device'])
-                output = model(data)
+                output = victim.model(data)
                 
                 predictions = torch.argmax(output.data, dim=1)
                 correct_preds = (predictions == target).sum().item()
                 
                 loss = loss_fn(output, target)
-                for new_param, ori_param in zip(list(model.parameters())[:-1], original_params):
+                for new_param, ori_param in zip(list(victim.model.parameters())[:-1], original_params):
                     loss += mu * torch.nn.L1Loss()(new_param, ori_param)
             
                 loss.backward()
@@ -121,7 +125,9 @@ class _Witch():
             total_loss /= totals
             total_corrects /= totals
             write(f"Epoch {epoch} Loss: {total_loss} | Accuracy: {total_corrects}", self.args.output)
-            if total_loss < 1e-2 or total_corrects >=0.95: break
+            if total_loss <= 1e-2: 
+                write("\n", self.args.output)
+                break
 
     def _initialize_brew(self, victim, kettle):
         """Implement common initialization operations for brewing."""
@@ -191,10 +197,6 @@ class _Witch():
 
     def _run_trial(self, victim, kettle):
         """Run a single trial. Perform one round of poisoning."""
-        if self.args.backdoor_finetuning:
-            self.backdoor_finetuning(victim.model, kettle, lr=0.0001, num_epoch=25)
-            write("\n", self.args.output)
-            
         poison_delta = kettle.initialize_poison() # Initialize poison mask of shape [num_poisons, channels, height, width] with values in [-eps, eps]
         if self.args.full_data:
             dataloader = kettle.trainloader

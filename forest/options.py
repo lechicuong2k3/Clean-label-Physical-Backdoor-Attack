@@ -26,8 +26,9 @@ def options():
 
     # Reproducibility management:
     parser.add_argument('--poisonkey', default='3-1', type=str, help='Initialize poison setup with this key.')  # Take input such as 05-1 for [0, 5] as the sources and 1 as the target
-    parser.add_argument('--poison_seed', default=12345, type=int, help='Initialize the poisons with this key.')
-    parser.add_argument('--model_seed', default=23456, type=int, help='Initialize the model with this key.')
+    parser.add_argument('--system_seed', default=None, type=int, help='Initialize the system with this key.')
+    parser.add_argument('--poison_seed', default=None, type=int, help='Initialize the poisons with this key.')
+    parser.add_argument('--model_seed', default=None, type=int, help='Initialize the model with this key.')
     parser.add_argument('--deterministic', action='store_true', help='Disable CUDNN non-determinism.')
 
     # Files and folders
@@ -137,7 +138,7 @@ def options():
     parser.add_argument('--skip_clean_training', action='store_true', help='Skip clean training. This is only suggested for attacks that do not depend on a clean model.')
 
     # Optimization setup
-    parser.add_argument('--optimization', default='conservative-adam', type=str, help='Optimization Strategy')
+    parser.add_argument('--optimization', default='conservative-sgd', type=str, help='Optimization Strategy')
     
     # Strategy overrides:
     parser.add_argument('--batch_size', default=64, type=int, help='Override default batch_size of --optimization strategy')
@@ -150,6 +151,7 @@ def options():
     # Debugging:
     parser.add_argument('--dryrun', default=False, action='store_true', help='This command runs every loop only a single time.')
     parser.add_argument('--save', default=None, help='Export poisons into a given format. Options are full/limited/numpy.')
+    parser.add_argument('--save_clean_model', action='store_true', help='Save the clean model train on specific seed')
     parser.add_argument('--exp_name', default=None, help='Save experimental results to a separate folder')
     
     # Distributed Computations
@@ -164,8 +166,8 @@ def options():
     parser.add_argument('--source_gradient_batch', default=None, type=int, help='Batch size for sources train gradient computing')
     parser.add_argument('--val_max_epoch', default=40, type=int, help='Train only up to this epoch for final validation.')
     parser.add_argument('--retrain_max_epoch', default=30, type=int, help='Train only up to this epoch for retraining during crafting.')
-    parser.add_argument('--retrain_scenario', default='from-scratch', type=str, choices=['from-scratch', 'finetuning', 'transfer'], help='Scenario for retraining and evaluating on the poisoned dataset')
-    parser.add_argument('--load_feature_repr', default=True, action='store_true', help='Load feature representation of the model trained on clean data')
+    parser.add_argument('--retrain_scenario', default=None, type=str, choices=['from-scratch', 'finetuning', 'transfer'], help='Scenario for retraining and evaluating on the poisoned dataset')
+    parser.add_argument('--load_feature_repr', default=False, action='store_true', help='Load feature representation of the model trained on clean data')
     parser.add_argument('--load_trained_model', default=False, action='store_true', help='Load trained model on clean data')
     parser.add_argument('--trigger', default='real_beard', type=str, help='Trigger type')
     parser.add_argument('--digital_trigger', action='store_true', default=False, help='Adding digital trigger instead of physical ones')
@@ -178,7 +180,7 @@ def options():
     parser.add_argument('--backdoor_finetuning', default=False, action='store_true', help='Finetuning on triggerset before poisoning')
     
     # Poison properties / controlling the strength of the attack:
-    parser.add_argument('--eps', default=16, type=float, help='Epsilon bound of the attack in a ||.||_p norm. p=Inf for all recipes except for "patch".')
+    parser.add_argument('--eps', default=8, type=float, help='Epsilon bound of the attack in a ||.||_p norm. p=Inf for all recipes except for "patch".')
     parser.add_argument('--alpha', default=0.1, type=float, help='Fraction of target_class training data that is poisoned by adding pertubation')
     parser.add_argument('--beta', default=0.0, type=float, help='Fraction of target_class training data that has physical trigger or digital trigger')
 

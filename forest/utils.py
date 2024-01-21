@@ -43,7 +43,6 @@ def average_dicts(running_stats):
             average_stats[stat] = np.mean([stat_dict[stat] for stat_dict in running_stats])
     return average_stats
 
-
 """Misc."""
 def _gradient_matching(poison_grad, source_grad):
     """Compute the blind passenger loss term."""
@@ -125,3 +124,10 @@ def global_meters_all_avg(device, *meters):
         torch.distributed.all_reduce(tensor)
 
     return [(tensor / torch.distributed.get_world_size()).item() for tensor in tensors]
+
+class ModifyTarget:
+    def __init__(self, y_target):
+        self.y_target = y_target
+
+    def __call__(self, y_target):
+        return self.y_target
