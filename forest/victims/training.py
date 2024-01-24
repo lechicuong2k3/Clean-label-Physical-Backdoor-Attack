@@ -58,7 +58,11 @@ def run_step(kettle, poison_delta, epoch, model, defs, optimizer, scheduler, los
             if poison_delta is not None:
                 poison_slices, batch_positions = kettle.lookup_poison_indices(ids)
                 if len(batch_positions) > 0:
-                    inputs[batch_positions] += poison_delta[poison_slices].to(**kettle.setup)
+                    if kettle.args.constrain_perturbation:
+                        inputs[batch_positions] += (poison_delta[poison_slices] * kettle.faces_overlays[poison_slices]).to(**kettle.setup)
+                    else:
+                        inputs[batch_positions] += poison_delta[poison_slices].to(**kettle.setup)
+                        
                     if kettle.args.recipe == 'label-consistent': 
                         kettle.patch_inputs(inputs)
                     

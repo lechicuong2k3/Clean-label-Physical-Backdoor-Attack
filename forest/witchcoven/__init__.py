@@ -2,7 +2,6 @@
 from .witch_matching import WitchGradientMatching, WitchGradientMatchingNoisy, WitchGradientMatchingHidden, WitchMatchingMultiSource
 from .witch_htbd import WitchHTBD
 from .witch_clbd import WitchLabelConsistent
-from .witch_ours import WitchOurs
 
 
 import torch
@@ -22,8 +21,6 @@ def Witch(args, setup=dict(device=torch.device('cpu'), dtype=torch.float)):
         return WitchHTBD(args, setup)
     elif args.recipe == 'label-consistent':
         return WitchLabelConsistent(args, setup)
-    elif args.recipe == 'ours':
-        return WitchOurs(args, setup)
     elif args.recipe == 'naive':
         return None
     else:
