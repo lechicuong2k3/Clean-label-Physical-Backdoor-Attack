@@ -62,7 +62,7 @@ def options():
     
     # Neural Cleanse
     parser.add_argument("--checkpoints", type=str, default="../../checkpoints/")
-    parser.add_argument("--device", type=str, default="cuda:0")
+    parser.add_argument("--devices", type=str, default="0,1,2,3")
     parser.add_argument("--result", type=str, default="./results")
     parser.add_argument("--defense_set", type=str, default="testset")
     parser.add_argument("--attack_mode", type=str, default="all2one")
@@ -142,7 +142,7 @@ def options():
     
     # Strategy overrides:
     parser.add_argument('--batch_size', default=64, type=int, help='Override default batch_size of --optimization strategy')
-    parser.add_argument('--lr', default=0.01, type=float, help='Override default learning rate of --optimization strategy')
+    parser.add_argument('--lr', default=0.1, type=float, help='Override default learning rate of --optimization strategy')
     parser.add_argument('--noaugment', action='store_true', help='Do not use data augmentation during training.')
 
     # Optionally, datasets can be stored within RAM:
@@ -162,7 +162,7 @@ def options():
     parser.add_argument('--keep_sources', action='store_true', default=True, help='Do we keep the sources are used for testing attack success rate?')
     parser.add_argument('--sources_train_rate', default=1.0, type=float, help='Fraction of source_class trainset that can be selected crafting poisons')
     parser.add_argument('--sources_selection_rate', default=1.0, type=int, help='Fraction of sources to be selected for crafting poisons')
-    parser.add_argument('--source_gradient_batch', default=None, type=int, help='Batch size for sources train gradient computing')
+    parser.add_argument('--source_gradient_batch', default=64, type=int, help='Batch size for sources train gradient computing')
     parser.add_argument('--val_max_epoch', default=40, type=int, help='Train only up to this epoch for final validation.')
     parser.add_argument('--retrain_max_epoch', default=30, type=int, help='Train only up to this epoch for retraining during crafting.')
     parser.add_argument('--retrain_scenario', default=None, type=str, choices=['from-scratch', 'finetuning', 'transfer'], help='Scenario for retraining and evaluating on the poisoned dataset')
@@ -177,6 +177,8 @@ def options():
     parser.add_argument('--poison_selection_strategy', default="max_gradient", type=str, choices=['max_gradient', 'max_loss'], help='Poison selection strategy')
     parser.add_argument('--poison_triggered_sample', default=False, action='store_true', help='Poison samples from poison class with physical trigger')
     parser.add_argument('--backdoor_finetuning', default=False, action='store_true', help='Finetuning on triggerset before poisoning')
+    parser.add_argument('--constrain_perturbation', default=False, action='store_true', help='Constrain the perturbation to facial area')
+
     
     # Poison properties / controlling the strength of the attack:
     parser.add_argument('--eps', default=8, type=float, help='Epsilon bound of the attack in a ||.||_p norm. p=Inf for all recipes except for "patch".')

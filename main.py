@@ -8,17 +8,17 @@ import time
 
 import forest
 
-from forest.filtering_defenses import get_defense
+# from forest.filtering_defenses import get_defense
 from forest.utils import write, set_random_seed
 from forest.consts import BENCHMARK, NUM_CLASSES
 torch.backends.cudnn.benchmark = BENCHMARK
 
-os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
-os.environ["CUDA_VISIBLE_DEVICES"]="3,0,2"
-
 # Parse input arguments
 args = forest.options().parse_args()
 args.dataset = os.path.join('datasets', args.dataset)
+
+os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
+os.environ["CUDA_VISIBLE_DEVICES"]=args.devices
 
 if args.system_seed != None:
     set_random_seed(args.system_seed)
@@ -54,7 +54,7 @@ if __name__ == "__main__":
     train_time = time.time()
     print("Train time: ", str(datetime.timedelta(seconds=train_time - start_time)))
     
-    if witch.args.backdoor_finetuning:
+    if args.recipe != 'naive' and witch.args.backdoor_finetuning:
         witch.backdoor_finetuning(model, data, lr=0.000005, num_epoch=25)
         if witch.args.load_feature_repr:
             model.save_feature_representation()
@@ -73,37 +73,37 @@ if __name__ == "__main__":
     craft_time = time.time()
     print("Craft time: ", str(datetime.timedelta(seconds=craft_time - train_time)))
     
-    # Optional: apply a filtering defense
-    if args.defense != '' and args.defense != 'neural_cleanse':
-        if args.scenario == 'from-scratch':
-            model.validate(data, poison_delta)
-        if args.recipe != 'naive':
-            write('Attempting to filter poison images...', args.output)
-            defense = get_defense(args)
-            clean_ids = defense(data, model, poison_delta, args)
-            poison_ids = set(range(len(data.trainset))) - set(clean_ids)
-            removed_images = len(data.trainset) - len(clean_ids)
-            removed_poisons = len(set(data.poison_target_ids.tolist()+data.triggerset_class_ids) & poison_ids)
-            removed_cleans = removed_images - removed_poisons
-            elimination_rate = removed_poisons/(len(data.poison_target_ids) + len(data.triggerset_class_ids))*100
-            sacrifice_rate = removed_cleans/(len(data.trainset)-len(data.poison_target_ids)-len(data.triggerset_class_ids))*100
-        else:
-            write('Attempting to filter poison images...', args.output)
-            defense = get_defense(args)
-            clean_ids = defense(data, model, poison_delta, args)
-            poison_ids = set(range(len(data.trainset))) - set(clean_ids)
-            removed_images = len(data.trainset) - len(clean_ids)
-            removed_poisons = len(set(data.triggerset_class_ids) & poison_ids)
-            removed_cleans = removed_images - removed_poisons
-            elimination_rate = removed_poisons/len(data.triggerset_class_ids)*100
-            sacrifice_rate = removed_cleans/(len(data.trainset)-len(data.triggerset_class_ids))*100
+    # # Optional: apply a filtering defense
+    # if args.defense != '' and args.defense != 'neural_cleanse':
+    #     if args.scenario == 'from-scratch':
+    #         model.validate(data, poison_delta)
+    #     if args.recipe != 'naive':
+    #         write('Attempting to filter poison images...', args.output)
+    #         defense = get_defense(args)
+    #         clean_ids = defense(data, model, poison_delta, args)
+    #         poison_ids = set(range(len(data.trainset))) - set(clean_ids)
+    #         removed_images = len(data.trainset) - len(clean_ids)
+    #         removed_poisons = len(set(data.poison_target_ids.tolist()+data.triggerset_class_ids) & poison_ids)
+    #         removed_cleans = removed_images - removed_poisons
+    #         elimination_rate = removed_poisons/(len(data.poison_target_ids) + len(data.triggerset_class_ids))*100
+    #         sacrifice_rate = removed_cleans/(len(data.trainset)-len(data.poison_target_ids)-len(data.triggerset_class_ids))*100
+    #     else:
+    #         write('Attempting to filter poison images...', args.output)
+    #         defense = get_defense(args)
+    #         clean_ids = defense(data, model, poison_delta, args)
+    #         poison_ids = set(range(len(data.trainset))) - set(clean_ids)
+    #         removed_images = len(data.trainset) - len(clean_ids)
+    #         removed_poisons = len(set(data.triggerset_class_ids) & poison_ids)
+    #         removed_cleans = removed_images - removed_poisons
+    #         elimination_rate = removed_poisons/len(data.triggerset_class_ids)*100
+    #         sacrifice_rate = removed_cleans/(len(data.trainset)-len(data.triggerset_class_ids))*100
 
-        data.reset_trainset(clean_ids)
-        write(f'Filtered {removed_images} images out of {len(data.trainset.dataset)}. {removed_poisons} were poisons.', args.output)
-        write(f'Elimination rate: {elimination_rate}% Sacrifice rate: {sacrifice_rate}%', args.output)
-        filter_stats = dict(removed_poisons=removed_poisons, removed_images_total=removed_images)
-    else:
-        filter_stats = dict()
+    #     data.reset_trainset(clean_ids)
+    #     write(f'Filtered {removed_images} images out of {len(data.trainset.dataset)}. {removed_poisons} were poisons.', args.output)
+    #     write(f'Elimination rate: {elimination_rate}% Sacrifice rate: {sacrifice_rate}%', args.output)
+    #     filter_stats = dict(removed_poisons=removed_poisons, removed_images_total=removed_images)
+    # else:
+    #     filter_stats = dict()
   
     if args.retrain_from_init:
         model.retrain(data, poison_delta) # Evaluate poison performance on the retrained model
