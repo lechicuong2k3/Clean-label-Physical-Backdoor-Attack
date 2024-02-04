@@ -1,3 +1,0 @@
-# Check trainset manipulation
-python main.py --trigger=sunglasses --recipe=gradient-matching --poisonkey=3-9 --alpha=0.0 --beta=0.2 --poison_triggered_sample --scenario=finetuning  --threatmodel=clean-single-source --vruns=3 --load_trained_model --exp_name=with_trigger --source_gradient_batch=64 --poison_seed=12345 --model_seed=23456 
-python main.py --trigger=sunglasses --recipe=gradient-matching --poisonkey=3-9 --alpha=0.0 --beta=0.2 --poison_triggered_sample --scenario=finetuning  --threatmodel=clean-single-source --vruns=3 --load_trained_model --exp_name=no_trigger --source_gradient_batch=64 --poison_seed=23456 --model_seed=23456 

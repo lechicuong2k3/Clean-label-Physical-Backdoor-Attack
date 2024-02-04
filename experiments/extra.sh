@@ -1,2 +1,0 @@
-python main.py --trigger=red_headband --recipe=label-consistent --poisonkey=1-4 --alpha=0.1 --beta=0.0 --scenario=finetuning  --threatmodel=clean-multi-source --defense=deepknn
-python main.py --trigger=red_headband --recipe=naive --poisonkey=1-4 --alpha=0.0 --beta=0.1 --scenario=finetuning  --threatmodel=clean-multi-source --defense=deepknn

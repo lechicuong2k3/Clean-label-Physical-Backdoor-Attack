@@ -13,3 +13,5 @@ label_consistant
 .gitignore
 down.py
 dlib
+*.sh
+*.txt

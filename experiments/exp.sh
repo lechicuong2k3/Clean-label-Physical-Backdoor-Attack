@@ -1,3 +1,0 @@
-python main.py --trigger=red_headband --recipe=hidden-trigger --poisonkey=0-4 --alpha=0.0 --beta=0.2 --vruns=1 --poison_triggered_sample --scenario=finetuning --threatmodel=clean-single-source --exp_name=new_test --deterministic
-python main.py --trigger=red_headband --recipe=hidden-trigger --poisonkey=6-4 --alpha=0.0 --beta=0.2 --vruns=1 --poison_triggered_sample --scenario=finetuning --threatmodel=clean-single-source --exp_name=new_test --deterministic
-python main.py --trigger=red_headband --recipe=hidden-trigger --poisonkey=7-4 --alpha=0.0 --beta=0.2 --vruns=1 --poison_triggered_sample --scenario=finetuning --threatmodel=clean-single-source --exp_name=new_test --deterministic

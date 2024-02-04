@@ -131,3 +131,27 @@ class ModifyTarget:
 
     def __call__(self, y_target):
         return self.y_target
+
+def visualize(dataset: torch.nn.Dataset):
+    import matplotlib.pyplot as plt
+    """Visualize a dataset of images"""
+    # Create a grid of 10x10 images
+    num_samples = len(dataset)
+    fig, axes = plt.subplots(nrows=num_samples // 10 + 1, ncols=10, figsize=(30, 90))  # Adjust figsize for desired size
+
+    # Iterate through the samples and plot them
+    for i, sample in enumerate(dataset):
+        image, label, _ = sample  # Assuming your dataset returns images and labels
+
+        # Convert image to NumPy array if needed
+        if isinstance(image, torch.Tensor):
+            image = image.cpu().permute(1,2,0).numpy()
+
+        axes.flat[i].imshow(image)
+
+    # Adjust layout and spacing
+    plt.tight_layout()
+
+    # Show the plot
+    plt.show()
+
