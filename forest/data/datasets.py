@@ -584,6 +584,11 @@ class FaceDetector:
             top_left = np.asarray([landmarks[1][0], landmarks[28][1]])
             top_right = np.asarray([landmarks[15][0], landmarks[28][1]])
             height = abs(landmarks[8][1] - landmarks[0][1]) # For facemask
+        
+        elif self.args.trigger == 'real_beard':
+            top_left = np.asarray([landmarks[48][0]-5, landmarks[33][1]])
+            top_right = np.asarray([landmarks[54][0]+5, landmarks[33][1]])
+            height = abs(landmarks[33][1] - landmarks[8][1]) # For real_beard
             
         elif self.args.trigger == 'red_headband':
             top_left = np.asarray([landmarks[0][0], landmarks[69][1]])

@@ -132,7 +132,7 @@ class ModifyTarget:
     def __call__(self, y_target):
         return self.y_target
 
-def visualize(dataset: torch.nn.Dataset):
+def visualize(dataset):
     import matplotlib.pyplot as plt
     """Visualize a dataset of images"""
     # Create a grid of 10x10 images
