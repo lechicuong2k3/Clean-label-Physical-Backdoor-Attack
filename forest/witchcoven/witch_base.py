@@ -75,7 +75,7 @@ class _Witch():
 
         return poison_delta # Return the best poison perturbation amont the restarts
 
-    def backdoor_finetuning(self, victim, kettle, num_epoch=10, lr=0.0001, mu=1):
+    def backdoor_finetuning(self, victim, kettle, num_epoch=10, lr=0.0001, mu=0.1):
         """Finetuning on triggerset of both target class and source class"""
 
         parameters_except_last_layer = list(victim.model.parameters())[:-1]  
@@ -125,7 +125,7 @@ class _Witch():
             total_loss /= totals
             total_corrects /= totals
             write(f"Epoch {epoch} Loss: {total_loss} | Accuracy: {total_corrects}", self.args.output)
-            if total_loss <= 1e-2: 
+            if total_loss <= 1e-3: 
                 write("\n", self.args.output)
                 break
 

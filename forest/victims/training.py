@@ -49,22 +49,23 @@ def run_step(kettle, poison_delta, epoch, model, defs, optimizer, scheduler, los
     for batch, (inputs, labels, ids) in enumerate(train_loader):
         # Prep Mini-Batch
         optimizer.zero_grad(set_to_none=False)
+        
+        #### Add poison pattern to data #####
+        if poison_delta is not None:
+            poison_slices, batch_positions = kettle.lookup_poison_indices(ids)
+            if len(batch_positions) > 0:
+                if kettle.args.constrain_perturbation:
+                    inputs[batch_positions] += (poison_delta[poison_slices] * kettle.faces_overlays[poison_slices])
+                else:
+                    inputs[batch_positions] += poison_delta[poison_slices]
+                    
+                if kettle.args.recipe == 'label-consistent': 
+                    kettle.patch_inputs(inputs, batch_positions, poison_slices)
+                    
+        #### Transfer to GPU #####
         with torch.autocast(device_type="cuda", dtype=torch.float16):
-            # Transfer to GPU
             inputs = inputs.to(**kettle.setup)
             labels = labels.to(dtype=torch.long, device=kettle.setup['device'], non_blocking=NON_BLOCKING)
-
-            # #### Add poison pattern to data #####
-            if poison_delta is not None:
-                poison_slices, batch_positions = kettle.lookup_poison_indices(ids)
-                if len(batch_positions) > 0:
-                    if kettle.args.constrain_perturbation:
-                        inputs[batch_positions] += (poison_delta[poison_slices] * kettle.faces_overlays[poison_slices]).to(**kettle.setup)
-                    else:
-                        inputs[batch_positions] += poison_delta[poison_slices].to(**kettle.setup)
-                        
-                    if kettle.args.recipe == 'label-consistent': 
-                        kettle.patch_inputs(inputs)
                     
             # Add data augmentation
             if defs.augmentations:  # defs.augmentations is actually a string, but it is False if --noaugment

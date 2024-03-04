@@ -1,8 +1,4 @@
-# export OMP_NUM_THREADS=3
-# torchrun --standalone --nnodes=1 --nproc-per-node=2 main_dist.py --trigger=real_beard --recipe=label-consistent --poisonkey=1-0 --alpha=0.1 --beta=0.0 --scenario=finetuning  --threatmodel=clean-multi-source 
-# torchrun --standalone --nnodes=1 --nproc-per-node=2 main_dist.py --trigger=sunglasses --recipe=label-consistent --poisonkey=1-3 --alpha=0.1 --beta=0.0 --scenario=finetuning  --threatmodel=clean-multi-source 
-# torchrun --standalone --nnodes=1 --nproc-per-node=2 main_dist.py --trigger=red_headband --recipe=label-consistent --poisonkey=1-2 --alpha=0.1 --beta=0.0 --scenario=finetuning  --threatmodel=clean-multi-source 
-
-python main.py --trigger=real_beard --recipe=label-consistent --poisonkey=1-0 --alpha=0.2 --beta=0.0 --scenario=finetuning  --threatmodel=clean-multi-source 
-python main.py --trigger=sunglasses --recipe=label-consistent --poisonkey=1-3 --alpha=0.2 --beta=0.0 --scenario=finetuning  --threatmodel=clean-multi-source 
-python main.py --trigger=red_headband --recipe=label-consistent --poisonkey=1-4 --alpha=0.2 --beta=0.0 --scenario=finetuning  --threatmodel=clean-multi-source 
+python main.py --trigger=sunglasses --recipe=label-consistent --poisonkey=1-6 --alpha=0.1 --beta=0.0 --scenario=finetuning --model_seed=12345  --threatmodel=clean-multi-source --devices=0,1 --exp_name=exp_13 &
+python main.py --trigger=real_beard --recipe=label-consistent --poisonkey=1-7 --alpha=0.1 --beta=0.0 --scenario=finetuning --model_seed=12345 --threatmodel=clean-multi-source --devices=1,2 --exp_name=exp_13 &
+python main.py --trigger=red_headband --recipe=label-consistent --poisonkey=1-9 --alpha=0.1 --beta=0.0 --scenario=finetuning --model_seed=12345 --threatmodel=clean-multi-source --devices=2,3 --exp_name=exp_13 &
+# python main.py --trigger=white_face_mask --recipe=label-consistent --poisonkey=1-3 --alpha=0.1 --beta=0.0 --scenario=finetuning  --model_seed=12345 --threatmodel=clean-multi-source --devices=3,4 --exp_name=exp_13 &

@@ -517,10 +517,13 @@ class FaceDetector:
 
     def get_landmarks(self, img):
         img_rescale = (img * 255.0).to(torch.uint8).permute(1,2,0).numpy()
-        facebox = self.landmark_detector(img_rescale, 1)[0]
+        facebox = self.landmark_detector(img_rescale, 1)
         
-        landmarks_1 = self.landmark_predictor_1(img_rescale, facebox.rect)
-        landmarks_2 = self.landmark_predictor_2(img_rescale, facebox.rect)
+        if len(facebox) == 0:
+            return np.array([])
+        
+        landmarks_1 = self.landmark_predictor_1(img_rescale, facebox[0].rect)
+        landmarks_2 = self.landmark_predictor_2(img_rescale, facebox[0].rect)
         shape_1 = face_utils.shape_to_np(landmarks_1)
         shape_2 = face_utils.shape_to_np(landmarks_2)
 
@@ -540,15 +543,30 @@ class FaceDetector:
         for idx, (img, _, image_id) in enumerate(self.dataset):
             landmarks = self.get_landmarks(img)
             
-            if self.args.constrain_perturbation:
-                mask = np.zeros((224, 224))
-                bound = [landmarks[i] for i in range(len(landmarks)) if i < 17 or i > 67]
-                routes = np.asarray([bound[i] for i in range(17)] + [bound[27], bound[23], bound[28], bound[22], bound[21], bound[29], bound[20], bound[19], bound[18], bound[17], bound[25], bound[24], bound[26]])
-                mask = torch.tensor(cv2.fillConvexPoly(mask, routes, 1)).to(torch.bool)
-                self.dataset_face_overlay[idx] = mask
+            if len(landmarks) == 0:
+                print('Faulty image: ', idx)
+                if self.args.constrain_perturbation:
+                    self.dataset_face_overlay[idx] = torch.ones((224, 224))
                 
-            if self.patch_trigger != None:
-                self.trigger_mask[idx] = self.get_transform_trigger(landmarks)           
+                if self.patch_trigger != None:
+                    new_height = int(self.trigger_img.shape[0] * 50 / self.trigger_img.shape[1])
+                    resize_transform = transforms.Resize((new_height, 50))
+                    resized_image = resize_transform(self.transform(self.trigger_img))
+                    black_frame = torch.zeros([4, 224, 224], dtype=torch.float32)  # 3 channels for RGB
+                    top_offset = (224 - new_height) // 2
+                    left_offset = (224 - 50) // 2
+                    black_frame[:, top_offset:top_offset+new_height, left_offset:left_offset+50] = resized_image
+                    self.trigger_mask[idx] = black_frame
+            else: 
+                if self.args.constrain_perturbation:
+                    mask = np.zeros((224, 224))
+                    bound = [landmarks[i] for i in range(len(landmarks)) if i < 17 or i > 67]
+                    routes = np.asarray([bound[i] for i in range(17)] + [bound[27], bound[23], bound[28], bound[22], bound[21], bound[29], bound[20], bound[19], bound[18], bound[17], bound[25], bound[24], bound[26]])
+                    mask = torch.tensor(cv2.fillConvexPoly(mask, routes, 1)).to(torch.bool)
+                    self.dataset_face_overlay[idx] = mask
+                    
+                if self.patch_trigger != None:
+                    self.trigger_mask[idx] = self.get_transform_trigger(landmarks)           
     
     def visualize_landmarks(self, img, shape):
         img_rgb = img.detach().clone().permute(1,2,0).numpy()
@@ -648,7 +666,7 @@ class FaceDetector:
         for depth in range(0, 3):  
             inputs[batch_positions, depth, ...] =  (
                 inputs[batch_positions, depth, ...] * alpha_inputs_masks + 
-                (self.trigger_mask[poison_slices, depth, ...]  * alpha_trigger_masks)
+                (self.trigger_mask[poison_slices, depth, ...] * alpha_trigger_masks)
             )
     
     def get_face_overlays(self, poison_slices):
