@@ -214,7 +214,7 @@ class _Witch():
                     scheduler = torch.optim.lr_scheduler.MultiStepLR(att_optimizer, milestones=[self.args.attackiter // 2.667, self.args.attackiter // 1.6,
                                                                                             self.args.attackiter // 1.142], gamma=0.1)
                 elif self.args.poison_scheduler == 'cosine':
-                    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(att_optimizer, T_0=100, T_mult=1, eta_min=0.001)
+                    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(att_optimizer, T_max=self.args.attackiter, eta_min=0.0001)
                 else:
                     raise ValueError('Unknown poison scheduler.')
                 
@@ -224,11 +224,23 @@ class _Witch():
         else:
             raise ValueError('Unknown attack optimizer.')
 
+        base_reg = 0.0001
+        final_reg = 0.001
+        start_iter = self.args.attackiter // 5
+        end_iter = self.args.attackiter 
+        increase = (final_reg - base_reg) / (end_iter - start_iter)
         for step in range(self.args.attackiter):
+            if step < start_iter:
+                curr_reg = 0
+            else:
+                curr_reg = base_reg + increase * (step - start_iter)
+                
             source_losses = 0
+            visual_losses = 0
             for batch, example in enumerate(dataloader):
-                loss, _ = self._batched_step(poison_delta, poison_bounds, example, victim, kettle)
+                loss, visual_loss, _ = self._batched_step(poison_delta, poison_bounds, example, victim, kettle, curr_reg)
                 source_losses += loss
+                visual_losses += visual_loss
 
                 if self.args.dryrun:
                     break
@@ -252,13 +264,14 @@ class _Witch():
                                                             poison_bounds), -dm / ds - poison_bounds)
 
             source_losses = source_losses / (batch + 1)
+            visual_losses = visual_losses / (batch + 1)
             if victim.rank != None:
                 source_losses = global_meters_all_avg(self.setup['device'], source_losses)[0]
                 
             if step % 10 == 0 or step == (self.args.attackiter - 1):
                 lr = att_optimizer.param_groups[0]['lr']
                 if victim.rank == 0 or victim.rank == None: 
-                    write(f'Iteration {step} | Poisoning learning rate: {lr} | Passenger loss: {source_losses:2.4f}', self.args.output)
+                    write(f'Iteration {step} | Poisoning learning rate: {lr} | Passenger loss: {source_losses:2.4f} | Visual loss: {visual_losses:2.4f}', self.args.output)
                 
             # Default not to step 
             if self.args.step:
@@ -292,7 +305,7 @@ class _Witch():
 
         return poison_delta, source_losses
 
-    def _batched_step(self, poison_delta, poison_bounds, example, victim, kettle):
+    def _batched_step(self, poison_delta, poison_bounds, example, victim, kettle, curr_regu):
         """Take a step toward minimizing the current poison loss."""
         inputs, labels, ids = example
 
@@ -356,7 +369,7 @@ class _Witch():
                 criterion = loss_fn
 
             closure = self._define_objective(inputs, labels, criterion)
-            loss, prediction = victim.compute(closure, self.source_grad, self.source_clean_grad, self.source_gnorm)
+            loss, visual_loss, prediction = victim.compute(closure, self.source_grad, self.source_clean_grad, self.source_gnorm, delta_slice, curr_regu)
 
             if self.args.clean_grad:
                 delta_slice.data = poison_delta[poison_slices].detach().to(**self.setup)
@@ -372,9 +385,9 @@ class _Witch():
             else:
                 raise NotImplementedError('Unknown attack optimizer.')
         else:
-            loss, prediction = torch.tensor(0), torch.tensor(0)
+            loss, visual_loss, prediction = torch.tensor(0), torch.tensor(0), torch.tensor(0)
 
-        return loss.item(), prediction.item()
+        return loss.item(), visual_loss.item(), prediction.item()
 
     def _define_objective():
         """Implement the closure here."""

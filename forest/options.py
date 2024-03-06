@@ -130,6 +130,7 @@ def options():
     parser.add_argument('--centreg', default=0, type=float)
     parser.add_argument('--normreg', default=0, type=float)
     parser.add_argument('--repel', default=0, type=float)
+    parser.add_argument('--visreg', default=None, choices=['l1', 'l2'])
 
     # Validation behavior
     parser.add_argument('--vruns', default=3, type=int, help='How often to re-initialize and check source after retraining')

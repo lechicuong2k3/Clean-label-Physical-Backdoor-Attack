@@ -342,6 +342,7 @@ class KettleSingle():
 
         # Cosine distance to mean
         distance = 1 - np.dot(point, cluster_mean) / (np.linalg.norm(point) * np.linalg.norm(cluster_mean))
+        # distance = - np.dot(point, cluster_mean)
         return distance
 
     def select_poisons(self, victim):
@@ -432,12 +433,21 @@ class KettleSingle():
                             for (img, _, _) in self.source_testset[source_class]:
                                 img = img.to(**self.setup)
                                 trigger_source_poi.append(featract(img.unsqueeze(0)).detach().cpu().numpy())
-
                         trigger_source_poi = np.array(trigger_source_poi).squeeze()
+                        
+                        target_class = self.poison_setup['target_class']
+                        target_class_idcs = self.trainset_distribution[target_class]
+                        untrigger_target_poi = []
+                        for idx in target_class_idcs:
+                            img, _, _ = self.trainset[idx]
+                            img = img.to(**self.setup)
+                            untrigger_target_poi.append(featract(img.unsqueeze(0)).detach().cpu().numpy())
+                        untrigger_target_poi = np.array(untrigger_target_poi).squeeze()
+                        
                         for image, label in zip(images, labels):
                             img = image.to(**self.setup)
                             feature = featract(img.unsqueeze(0)).detach().cpu().numpy().squeeze()
-                            distances.append(self.cosine_cluster_distances(feature, trigger_source_poi))
+                            distances.append(self.cosine_cluster_distances(feature, trigger_source_poi) - self.cosine_cluster_distances(feature, untrigger_target_poi))
 
                     self.poison_num += ceil(np.ceil(self.args.alpha * len(self.trainset_distribution[poison_class])))
                     indices = [i[0] for i in sorted(enumerate(distances), key=lambda x:x[1])][:self.poison_num]

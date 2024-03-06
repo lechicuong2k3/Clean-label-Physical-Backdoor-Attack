@@ -2,7 +2,7 @@
 
 import torch
 from ..consts import BENCHMARK, NON_BLOCKING
-from ..utils import bypass_last_layer, cw_loss
+from ..utils import bypass_last_layer, cw_loss, write
 from ..victims.training import _split_data
 torch.backends.cudnn.benchmark = BENCHMARK
 from .witch_base import _Witch
@@ -20,7 +20,7 @@ class WitchGradientMatching(_Witch):
 
     def _define_objective(self, inputs, labels, criterion):
         """Implement the closure here."""
-        def closure(model, optimizer, source_grad, source_clean_grad, source_gnorm):
+        def closure(model, optimizer, source_grad, source_clean_grad, source_gnorm, perturbations, regu_weight):
             """This function will be evaluated on all GPUs."""  # noqa: D401
             differentiable_params = [p for p in model.parameters() if p.requires_grad]
             outputs = model(inputs)
@@ -30,10 +30,13 @@ class WitchGradientMatching(_Witch):
             poison_grad = torch.autograd.grad(poison_loss, differentiable_params, retain_graph=True, create_graph=True)
 
             passenger_loss = self._passenger_loss(poison_grad, source_grad, source_clean_grad, source_gnorm)
+            if self.args.visreg == 'l1':
+                visual_loss = torch.mean(torch.linalg.norm(perturbations.view(16,-1), dim=1, ord=2))
+                attacker_loss = passenger_loss + regu_weight * visual_loss
             if self.args.centreg != 0:
-                passenger_loss = passenger_loss + self.args.centreg * poison_loss
-            passenger_loss.backward(retain_graph=self.retain)
-            return passenger_loss.detach().cpu(), prediction.detach().cpu()
+                attacker_loss = passenger_loss + self.args.centreg * poison_loss
+            attacker_loss.backward(retain_graph=self.retain)
+            return passenger_loss.detach().cpu(), visual_loss.detach().cpu(), prediction.detach().cpu()
         return closure
 
     def _passenger_loss(self, poison_grad, source_grad, source_clean_grad, source_gnorm):
