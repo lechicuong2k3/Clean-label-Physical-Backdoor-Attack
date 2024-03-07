@@ -401,9 +401,9 @@ class KettleSingle():
                 labels = torch.tensor(labels).to(device=self.setup['device'], dtype=torch.long)
                 poison_target_ids = torch.tensor(poison_target_ids, dtype=torch.long)
                     
-                if self.args.poison_selection_strategy == None:
+                if self.args.poison_selection_strategy == 'random':
                     self.poison_num += ceil(np.ceil(self.args.alpha * len(self.trainset_distribution[poison_class])))
-                    indices = random.sample(self.trainset_distribution[poison_class], self.poison_num)
+                    indices = random.sample(list(range(len(poison_target_ids))), self.poison_num)
                     
                 elif self.args.poison_selection_strategy == 'cross_margin':
                     softmax = torch.nn.Softmax(dim=1)
@@ -451,6 +451,25 @@ class KettleSingle():
 
                     self.poison_num += ceil(np.ceil(self.args.alpha * len(self.trainset_distribution[poison_class])))
                     indices = [i[0] for i in sorted(enumerate(distances), key=lambda x:x[1])][:self.poison_num]
+                
+                elif self.args.poison_selection_strategy == 'max_loss':
+                    write('Selections strategy is {}'.format(self.args.poison_selection_strategy), self.args.output)
+                    
+                    # Turning to evaluation mode
+                    victim.eval(dropout=True)
+                    
+                    with torch.no_grad():
+                        losses = []
+                        model = victim.model
+                        for image, label in zip(images, labels):
+                            img = image.to(**self.setup).unsqueeze(0)
+                            label = label.to(self.setup['device']).unsqueeze(0)
+                            output = model(img)
+                            loss = criterion(output, label)
+                            losses.append(loss)
+
+                    self.poison_num += ceil(np.ceil(self.args.alpha * len(self.trainset_distribution[poison_class])))
+                    indices = [i[0] for i in sorted(enumerate(losses), key=lambda x:x[1])][-self.poison_num:]
                     
                 elif self.args.poison_selection_strategy == 'max_gradient':
                     write('Selections strategy is {}'.format(self.args.poison_selection_strategy), self.args.output)

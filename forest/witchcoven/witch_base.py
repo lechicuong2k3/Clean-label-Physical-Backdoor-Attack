@@ -59,7 +59,12 @@ class _Witch():
         """Run generalized iterative routine."""
         self._initialize_brew(victim, kettle)
         poisons, scores = [], torch.ones(self.args.restarts) * 10_000
-
+        if self.args.featreg != 0:
+            self.get_feature_extractor(victim)
+            self.target_feature = self.get_target_feature(victim, kettle)
+        else:
+            self.target_feature = None
+        
         for trial in range(self.args.restarts):
             if victim.rank == 0 or  victim.rank == None:  write("Poisoning number {}".format(trial), self.args.output)
             poison_delta, source_losses = self._run_trial(victim, kettle) # Poisoning
@@ -74,6 +79,39 @@ class _Witch():
         poison_delta = poisons[optimal_score]
 
         return poison_delta # Return the best poison perturbation amont the restarts
+    
+    def get_feature(self, inputs, with_grad=False):
+        self.featract.eval()
+        if with_grad:
+            return self.featract(inputs)
+        else:
+            with torch.no_grad():
+                return self.featract(inputs)
+    
+    def get_feature_extractor(self, victim):
+        from forest.victims.models import bypass_last_layer
+        self.featract, _ = bypass_last_layer(victim.model)
+        
+    def get_target_feature(self, victim, kettle):        
+        with torch.no_grad():
+            target_class = kettle.poison_setup['target_class']
+            target_class_idcs = kettle.trainset_distribution[target_class]
+            
+            target_feats = []
+            for idx in target_class_idcs:
+                img, _, _ = kettle.trainset[idx]
+                img = img.to(**self.setup)
+                feat = self.get_feature(img.unsqueeze(0))
+                target_feats.append(feat)
+                
+        target_feats = torch.stack(target_feats)
+        return target_feats.squeeze().mean(dim=0)
+    
+    def get_featloss(self, inputs):
+        features = self.get_feature(inputs)
+        with torch.no_grad():
+            feats = self.featract(inputs)
+            return torch.linalg.norm(feats - self.target_feature, ord=2, dim=0).mean()
 
     def backdoor_finetuning(self, victim, kettle, num_epoch=10, lr=0.0001, mu=0.1):
         """Finetuning on triggerset of both target class and source class"""
@@ -223,25 +261,29 @@ class _Witch():
             poison_bounds = torch.zeros_like(poison_delta)
         else:
             raise ValueError('Unknown attack optimizer.')
-
+        
         base_reg = 0.0001
         final_reg = 0.001
         start_iter = self.args.attackiter // 5
         end_iter = self.args.attackiter 
         increase = (final_reg - base_reg) / (end_iter - start_iter)
+        
         for step in range(self.args.attackiter):
             if step < start_iter:
                 curr_reg = 0
             else:
                 curr_reg = base_reg + increase * (step - start_iter)
-                
+            
             source_losses = 0
             visual_losses = 0
+            feat_losses = 0
+                
             for batch, example in enumerate(dataloader):
-                loss, visual_loss, _ = self._batched_step(poison_delta, poison_bounds, example, victim, kettle, curr_reg)
+                loss, visual_loss, feat_loss, _ = self._batched_step(poison_delta, poison_bounds, example, victim, kettle, curr_reg)
                 source_losses += loss
                 visual_losses += visual_loss
-
+                feat_losses += feat_loss
+                
                 if self.args.dryrun:
                     break
 
@@ -265,13 +307,18 @@ class _Witch():
 
             source_losses = source_losses / (batch + 1)
             visual_losses = visual_losses / (batch + 1)
+            feat_losses = feat_losses / (batch + 1)
+            
             if victim.rank != None:
                 source_losses = global_meters_all_avg(self.setup['device'], source_losses)[0]
                 
             if step % 10 == 0 or step == (self.args.attackiter - 1):
                 lr = att_optimizer.param_groups[0]['lr']
                 if victim.rank == 0 or victim.rank == None: 
-                    write(f'Iteration {step} | Poisoning learning rate: {lr} | Passenger loss: {source_losses:2.4f} | Visual loss: {visual_losses:2.4f}', self.args.output)
+                    if self.target_feature != None:
+                        write(f'Iteration {step} - lr: {lr} | Passenger loss: {source_losses:2.4f} | Visual loss: {visual_losses:2.4f} | Feature loss: {feat_losses:2.4f}', self.args.output)
+                    else:
+                        write(f'Iteration {step} - lr: {lr} | Passenger loss: {source_losses:2.4f} | Visual loss: {visual_losses:2.4f}', self.args.output)
                 
             # Default not to step 
             if self.args.step:
@@ -322,6 +369,11 @@ class _Witch():
             delta_slice.requires_grad_()  # TRACKING GRADIENTS FROM HERE
             poison_images = inputs[batch_positions]
             inputs[batch_positions] += delta_slice
+            
+            if self.target_feature != None:
+                feat_loss = self.get_featloss(inputs)
+            else:
+                feat_loss = torch.tensor(0)
 
             # Add additional clean data if mixing during the attack:
             if self.args.pmix:
@@ -367,7 +419,7 @@ class _Witch():
                     return loss
             else:
                 criterion = loss_fn
-
+ 
             closure = self._define_objective(inputs, labels, criterion)
             loss, visual_loss, prediction = victim.compute(closure, self.source_grad, self.source_clean_grad, self.source_gnorm, delta_slice, curr_regu)
 
@@ -385,9 +437,9 @@ class _Witch():
             else:
                 raise NotImplementedError('Unknown attack optimizer.')
         else:
-            loss, visual_loss, prediction = torch.tensor(0), torch.tensor(0), torch.tensor(0)
+            loss, visual_loss, feat_loss, prediction = torch.tensor(0), torch.tensor(0), torch.tensor(0), torch.tensor(0)
 
-        return loss.item(), visual_loss.item(), prediction.item()
+        return loss.item(), visual_loss.item(), feat_loss.item(), prediction.item()
 
     def _define_objective():
         """Implement the closure here."""

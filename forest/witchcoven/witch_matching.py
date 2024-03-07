@@ -30,9 +30,18 @@ class WitchGradientMatching(_Witch):
             poison_grad = torch.autograd.grad(poison_loss, differentiable_params, retain_graph=True, create_graph=True)
 
             passenger_loss = self._passenger_loss(poison_grad, source_grad, source_clean_grad, source_gnorm)
+            visual_loss = torch.mean(torch.linalg.norm(perturbations.view(16,-1), dim=1, ord=2))
             if self.args.visreg == 'l1':
-                visual_loss = torch.mean(torch.linalg.norm(perturbations.view(16,-1), dim=1, ord=2))
                 attacker_loss = passenger_loss + regu_weight * visual_loss
+            else:
+                attacker_loss = passenger_loss
+            
+            if self.args.featreg != 0:
+                if self.target_feature == None: raise ValueError('No target feature found')
+                inputs_features = self.get_feature(inputs, with_grad=True)
+                feature_loss = self.args.featreg * torch.linalg.norm(inputs_features - self.target_feature, ord=2, dim=0).mean()
+                attacker_loss += feature_loss 
+                
             if self.args.centreg != 0:
                 attacker_loss = passenger_loss + self.args.centreg * poison_loss
             attacker_loss.backward(retain_graph=self.retain)

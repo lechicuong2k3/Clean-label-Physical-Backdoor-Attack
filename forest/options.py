@@ -131,6 +131,7 @@ def options():
     parser.add_argument('--normreg', default=0, type=float)
     parser.add_argument('--repel', default=0, type=float)
     parser.add_argument('--visreg', default=None, choices=['l1', 'l2'])
+    parser.add_argument('--featreg', default=0.0, type=float)
 
     # Validation behavior
     parser.add_argument('--vruns', default=3, type=int, help='How often to re-initialize and check source after retraining')
@@ -175,7 +176,7 @@ def options():
     parser.add_argument('--opacity', default=32/255, type=float, help='The opacity of digital trigger')
     parser.add_argument('--retrain_iter', default=100, type=int, help='Start retraining every <retrain_iter> iterations')
     parser.add_argument('--source_selection_strategy', default=None, type=str, choices=['max_gradient', 'max_loss'], help='source selection strategy')
-    parser.add_argument('--poison_selection_strategy', default="max_gradient", type=str, choices=['max_gradient', 'max_loss', 'cosine_distance'], help='Poison selection strategy')
+    parser.add_argument('--poison_selection_strategy', default="max_gradient", type=str, choices=['max_gradient', 'max_loss', 'cosine_distance', 'random'], help='Poison selection strategy')
     parser.add_argument('--poison_triggered_sample', default=False, action='store_true', help='Poison samples from poison class with physical trigger')
     parser.add_argument('--backdoor_finetuning', default=False, action='store_true', help='Finetuning on triggerset before poisoning')
     parser.add_argument('--constrain_perturbation', default=False, action='store_true', help='Constrain the perturbation to facial area')
