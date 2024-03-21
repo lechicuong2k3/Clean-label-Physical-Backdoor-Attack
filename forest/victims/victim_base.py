@@ -42,7 +42,6 @@ class _VictimBase:
         if self.args.ensemble < len(self.args.net):
             raise ValueError(f'More models requested than ensemble size.'
                              f'Increase ensemble size or reduce models.')
-        self.rank = None
         self.loss_fn = torch.nn.CrossEntropyLoss()
         self.initialize()
 
@@ -106,7 +105,6 @@ class _VictimBase:
         model.eval()
         if dropout:
             model.apply(apply_dropout)
-            
                 
     def save_feature_representation(self):
         raise NotImplementedError()
@@ -128,28 +126,26 @@ class _VictimBase:
     def train(self, kettle, max_epoch=None):
         """Clean (pre)-training of the chosen model, no poisoning involved."""
             
-        if self.rank == None or self.rank == 0: 
-            write('Starting clean training with {} scenario ...'.format(self.args.scenario), self.args.output)
+        write('Starting clean training with {} scenario ...'.format(self.args.scenario), self.args.output)
         
-        save_path = os.path.join(self.args.model_savepath, "clean", f"{self.args.net[0].upper()}_{self.args.scenario}_{self.model_init_seed}_{self.args.train_max_epoch}.pth")
-        if self.args.load_trained_model and os.path.exists(save_path) == False:
-            print('Cannot load model as the path does not exist.')
-            self.args.load_trained_model = False
+        if self.args.recipe == 'label-consistent':
+            save_path = os.path.join(self.args.model_savepath, "clean", f"{self.args.net[0].upper()}_robust.pth")
+        else:
+            save_path = os.path.join(self.args.model_savepath, "clean", f"{self.args.net[0].upper()}_{self.model_init_seed}_{self.args.train_max_epoch}.pth")
             
-        if self.args.dryrun or self.args.load_trained_model == False:
+        if self.args.dryrun or os.path.exists(save_path) == False:
             self._iterate(kettle, poison_delta=None, max_epoch=max_epoch) # Validate poison
             if self.args.dryrun == False:
                 os.makedirs(os.path.dirname(save_path), exist_ok=True)
                 if self.args.ensemble == 1 and self.args.save_clean_model:
                     self.save_model(save_path)
         else: 
-            if self.rank == None or self.rank == 0: 
-                write('Model already exists, skipping training.', self.args.output)
-            if self.rank == None:
-                self.model.load_state_dict(torch.load(save_path))
-            else:
+            write('Model already exists, skipping training.', self.args.output)
+            if isinstance(self.model, torch.nn.DataParallel):
                 self.model.module.load_state_dict(torch.load(save_path))
-            
+            else:
+                self.model.load_state_dict(torch.load(save_path))
+
             # Do evaluation on the loaded model
             predictions = run_validation(self.model, self.loss_fn, kettle.validloader,
                                             kettle.poison_setup['poison_class'],
@@ -163,25 +159,25 @@ class _VictimBase:
             suspicion_rate, false_positive_rate = check_suspicion(self.model, kettle.suspicionloader, kettle.fploader, kettle.poison_setup['target_class'], kettle.setup)
             
             valid_loss, valid_acc, valid_acc_target, valid_acc_source = predictions['all']['loss'], predictions['all']['avg'], predictions['target']['avg'], predictions['source']['avg']
-            if self.rank == None or self.rank == 0: 
-                write('------------- Validation -------------', self.args.output)
-                write(f'Validation  loss : {valid_loss:7.4f} | Validation accuracy: {valid_acc:7.4%}', self.args.output)
-                write(f'Target val. acc  : {valid_acc_target:7.4%} | Source val accuracy: {valid_acc_source:7.4%}', self.args.output)
-                for source_class in source_adv_acc.keys():
-                    backdoor_acc, clean_acc, backdoor_loss, clean_loss = source_adv_acc[source_class], source_clean_acc[source_class], source_adv_loss[source_class], source_clean_loss[source_class]
-                    if source_class != 'avg':
-                        write(f'Source class: {source_class}', self.args.output)
-                    else:
-                        write(f'Average:', self.args.output)
-                    write('Backdoor loss: {:7.4f} | Backdoor acc: {:7.4%}'.format(backdoor_loss, backdoor_acc), self.args.output)
-                    write('Clean    loss: {:7.4f} | Clean    acc: {:7.4%}'.format(clean_loss, clean_acc), self.args.output)
-                write('--------------------------------------', self.args.output)
-                write(f'False positive rate: {false_positive_rate:7.4%} | Suspicion rate: {suspicion_rate:7.4%}', self.args.output)
+            
+            write('------------- Validation -------------', self.args.output)
+            write(f'Validation  loss : {valid_loss:7.4f} | Validation accuracy: {valid_acc:7.4%}', self.args.output)
+            write(f'Target val. acc  : {valid_acc_target:7.4%} | Source val accuracy: {valid_acc_source:7.4%}', self.args.output)
+            for source_class in source_adv_acc.keys():
+                backdoor_acc, clean_acc, backdoor_loss, clean_loss = source_adv_acc[source_class], source_clean_acc[source_class], source_adv_loss[source_class], source_clean_loss[source_class]
+                if source_class != 'avg':
+                    write(f'Source class: {source_class}', self.args.output)
+                else:
+                    write(f'Average:', self.args.output)
+                write('Backdoor loss: {:7.4f} | Backdoor acc: {:7.4%}'.format(backdoor_loss, backdoor_acc), self.args.output)
+                write('Clean    loss: {:7.4f} | Clean    acc: {:7.4%}'.format(clean_loss, clean_acc), self.args.output)
+            write('--------------------------------------', self.args.output)
+            write(f'False positive rate: {false_positive_rate:7.4%} | Suspicion rate: {suspicion_rate:7.4%}', self.args.output)
             
         
         if self.args.load_feature_repr:
             self.save_feature_representation()
-            if self.rank == None or self.rank == 0: write('Feature representation saved.', self.args.output)
+            write('Feature representation saved.', self.args.output)
             
     def retrain(self, kettle, poison_delta, max_epoch=None):
         """Retrain with the same initialization on dataset with poison added."""

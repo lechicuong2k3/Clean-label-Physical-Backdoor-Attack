@@ -6,10 +6,11 @@ from torch import nn
 from collections import defaultdict
 
 from .utils import print_and_save_stats
-from .batched_attacks import construct_attack, _gradient_matching
+from .batched_attacks import construct_attack
 
-from ..consts import NON_BLOCKING, BENCHMARK
+from ..consts import NON_BLOCKING, BENCHMARK, NORMALIZE
 from ..utils import write, global_meters_all_avg
+from ..data.datasets import normalize
 torch.backends.cudnn.benchmark = BENCHMARK
 
 def run_step(kettle, poison_delta, epoch, model, defs, optimizer, scheduler, loss_fn=nn.CrossEntropyLoss(reduction='mean'), rank=None):
@@ -49,7 +50,7 @@ def run_step(kettle, poison_delta, epoch, model, defs, optimizer, scheduler, los
     for batch, (inputs, labels, ids) in enumerate(train_loader):
         # Prep Mini-Batch
         optimizer.zero_grad(set_to_none=False)
-        
+            
         #### Add poison pattern to data #####
         if poison_delta is not None:
             poison_slices, batch_positions = kettle.lookup_poison_indices(ids)
@@ -58,10 +59,10 @@ def run_step(kettle, poison_delta, epoch, model, defs, optimizer, scheduler, los
                     inputs[batch_positions] += (poison_delta[poison_slices] * kettle.faces_overlays[poison_slices])
                 else:
                     inputs[batch_positions] += poison_delta[poison_slices]
-                    
+                
                 if kettle.args.recipe == 'label-consistent': 
                     kettle.patch_inputs(inputs, batch_positions, poison_slices)
-                    
+            
         #### Transfer to GPU #####
         with torch.autocast(device_type="cuda", dtype=torch.float16):
             inputs = inputs.to(**kettle.setup)
@@ -82,7 +83,10 @@ def run_step(kettle, poison_delta, epoch, model, defs, optimizer, scheduler, los
                                                             steps=defs.novel_defense['steps'])
 
                     inputs = inputs + delta  # Kind of a reparametrization trick
-                    
+            
+            if NORMALIZE:
+                inputs = normalize(inputs)
+            
             # Switch into training mode
             if isinstance(model, torch.nn.DataParallel) or isinstance(model, torch.nn.parallel.DistributedDataParallel):
                 frozen = model.module.frozen

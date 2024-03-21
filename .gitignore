@@ -15,3 +15,5 @@ down.py
 dlib
 *.sh
 *.txt
+adv_training
+

@@ -76,8 +76,6 @@ if __name__ == "__main__":
     craft_time = time.time()
     print("Craft time: ", str(datetime.timedelta(seconds=craft_time - train_time)))
     
-    model.validate(data, poison_delta)
-    
     # Optional: apply a filtering defense
     if args.defense != '' and args.defense != 'neural_cleanse':
         if args.recipe != 'naive':

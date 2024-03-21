@@ -4,22 +4,25 @@ import torch
 import torchvision
 from PIL import Image
 from ..utils import bypass_last_layer, cw_loss, write
-from ..consts import BENCHMARK, NON_BLOCKING, FINETUNING_LR_DROP
+from ..consts import BENCHMARK, NON_BLOCKING, FINETUNING_LR_DROP, NORMALIZE
 from forest.data import datasets
 torch.backends.cudnn.benchmark = BENCHMARK
 import random
 from .witch_base import _Witch
+from forest.data.datasets import normalize
 
 class WitchHTBD(_Witch):
     def _run_trial(self, victim, kettle):
         """Run a single trial."""
-        if self.args.backdoor_finetuning:
-            self.backdoor_finetuning(victim.model, kettle, lr=0.0001, num_epoch=15)
-            write("\n", self.args.output)
+        if self.args.pretrain_perturbation:
+            self._pretrain_perturbation(victim, kettle, poison_delta, poison_bounds)
         
         poison_delta = kettle.initialize_poison()
         dataloader = kettle.poisonloader
-        # self.args.poison_scheduler = 'linear' # Fix linear scheduler for HTBD
+        self.args.poison_scheduler = 'linear' # Fix linear scheduler for HTBD
+        self.args.attackoptim = 'PGD'
+        self.args.attackiter = 5000
+        self.tau0 = 0.001
 
         validated_batch_size = max(min(kettle.args.pbatch, len(kettle.poisonset)), 1)
 
@@ -33,9 +36,13 @@ class WitchHTBD(_Witch):
             if self.args.scheduling:
                 if self.args.poison_scheduler == 'linear':
                     scheduler = torch.optim.lr_scheduler.MultiStepLR(att_optimizer, milestones=[self.args.attackiter // 2.667, self.args.attackiter // 1.6,
-                                                                                            self.args.attackiter // 1.142], gamma=0.1)
+                                                                        self.args.attackiter // 1.142], gamma=0.1)
                 elif self.args.poison_scheduler == 'cosine':
-                    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(att_optimizer, T_0=250, T_mult=1, eta_min=0.001)
+                    if self.args.retrain_scenario == None:
+                        T_restart = self.args.attackiter
+                    else:
+                        T_restart = self.args.retrain_iter
+                    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(att_optimizer, T_0=T_restart, eta_min=0.0001)
                 else:
                     raise ValueError('Unknown poison scheduler.')
                 
@@ -46,6 +53,8 @@ class WitchHTBD(_Witch):
             poison_bounds = None
 
         for step in range(self.args.attackiter):
+            if step == 1999 or step == 3999:
+                self.tau0 *= 0.95
             source_losses = 0
             poison_correct = 0
             for batch, example in enumerate(dataloader):
@@ -56,6 +65,10 @@ class WitchHTBD(_Witch):
                     sources.append(temp_source)
                     # source_labels.append(temp_label)
                 sources = torch.stack(sources)
+                
+                if NORMALIZE:
+                    sources = normalize(sources)
+                    
                 loss, prediction = self._batched_step(poison_delta, poison_bounds, example, victim, kettle, sources)
                 source_losses += loss
                 poison_correct += prediction
@@ -81,11 +94,16 @@ class WitchHTBD(_Witch):
                     poison_delta.data = torch.max(torch.min(poison_delta, (1 - dm) / ds -
                                                             poison_bounds), -dm / ds - poison_bounds)
 
+            with torch.no_grad():
+                visual_losses = torch.mean(torch.linalg.norm(poison_delta.view(16,-1), dim=1, ord=2))
+                
             source_losses = source_losses / (batch + 1)
             if step % 10 == 0 or step == (self.args.attackiter - 1):
-                lr = att_optimizer.param_groups[0]['lr']
-                if victim.rank == 0 or victim.rank == None: 
-                    write(f'Iteration {step} | Poisoning learning rate: {lr} | Passenger loss: {source_losses:2.4f}', self.args.output)
+                if self.args.attackoptim in ['PGD', 'GD']:
+                    lr = self.tau0
+                else:
+                    lr = att_optimizer.param_groups[0]['lr']
+                write(f'Iteration {step} | Poisoning learning rate: {lr} | Passenger loss: {source_losses:2.4f} | Visual loss: {visual_losses:2.4f}', self.args.output)
 
             if self.args.step:
                 if self.args.clean_grad:
@@ -96,26 +114,23 @@ class WitchHTBD(_Witch):
             if self.args.dryrun:
                 break
             
-            # if self.args.retrain_scenario != None:
-            #     if step % (self.args.retrain_iter) == 0 and step != 0 and step != (self.args.attackiter - 1):
-            #         write("\nRetraining at iteration {}".format(step), self.args.output)
-            #         poison_delta.detach()
-            #         write(f'Model reinitialized and retrain with {self.args.scenario} scenario', self.args.output)
-            #         if self.args.retrain_scenario == 'from-scratch':
-            #             victim.initialize()
-            #         elif self.args.retrain_scenario in ['transfer', 'finetuning']:
-            #             if self.args.load_feature_repr:
-            #                 victim.load_feature_representation()
-            #             if self.args.retrain_scenario == 'finetuning':
-            #                 victim.reinitialize_last_layer(reduce_lr_factor=FINETUNING_LR_DROP, keep_last_layer=True)
+            if self.args.retrain_scenario != None:
+                if step % (self.args.retrain_iter) == 0 and step != 0 and step != (self.args.attackiter - 1):
+                    write("\nRetraining at iteration {}".format(step), self.args.output)
+                    write(f'Model reinitialized and retrain with {self.args.scenario} scenario', self.args.output)
+                    if self.args.retrain_scenario == 'from-scratch':
+                        victim.initialize()
+                    elif self.args.retrain_scenario in ['transfer', 'finetuning']:
+                        if self.args.load_feature_repr:
+                            victim.load_feature_representation()
+                        if self.args.retrain_scenario == 'finetuning':
+                            victim.reinitialize_last_layer(reduce_lr_factor=FINETUNING_LR_DROP, keep_last_layer=True)
 
-            #         victim._iterate(kettle, poison_delta=poison_delta, max_epoch=self.args.retrain_max_epoch)
-            #         write('Retraining done!\n', self.args.output)
-            #         self._initialize_brew(victim, kettle)
+                    victim._iterate(kettle, poison_delta=poison_delta.detach(), max_epoch=self.args.retrain_max_epoch)
+                    write('Retraining done!\n', self.args.output)
+                    self._initialize_brew(victim, kettle)
 
         return poison_delta, source_losses
-
-
 
     def _batched_step(self, poison_delta, poison_bounds, example, victim, kettle, sources):
         """Take a step toward minmizing the current source loss."""
@@ -139,6 +154,9 @@ class WitchHTBD(_Witch):
             # Perform differentiable data augmentation
             if self.args.paugment:
                 inputs = kettle.augment(inputs)
+            
+            if NORMALIZE:
+                inputs = normalize(inputs)
 
             # Perform mixing
             if self.args.pmix:
@@ -163,7 +181,7 @@ class WitchHTBD(_Witch):
                 criterion = loss_fn
 
             closure = self._define_objective(inputs, labels, criterion, sources, source_class=kettle.poison_setup['source_class'][0], target_class=kettle.poison_setup['target_class'])
-            loss, prediction = victim.compute(closure, self.source_grad, self.source_clean_grad, self.source_gnorm)
+            loss, prediction = victim.compute(closure, None, None, None)
 
             if self.args.clean_grad:
                 delta_slice.data = poison_delta[poison_slices].detach().to(**self.setup)
@@ -196,21 +214,10 @@ class WitchHTBD(_Witch):
                 new_inputs[i] = inputs[input_indcs[i]]
                 new_sources[i] = sources[source_indcs[i]]
 
-            ### Modification  
-            # source_labels = torch.tensor([source_class] * new_inputs.shape[0], dtype=torch.long, device=self.setup['device'])
-            # outputs_target_feature = feature_model(new_inputs)
-            # prediction = (last_layer(outputs_target_feature).data.argmax(dim=1) == labels).sum()
-            # outputs_target_softmax = model(new_inputs)
-            # outputs_source_feature = feature_model(new_inputs)
-            # feature_loss = (outputs_target_feature - outputs_source_feature).pow(2).mean(dim=1).sum() + 0.1 * criterion(outputs_target_softmax, source_labels)
-            # feature_loss.backward(retain_graph=self.retain)
-            ###
             outputs = feature_model(new_inputs)
             prediction = (last_layer(outputs).data.argmax(dim=1) == labels).sum()
             outputs_sources = feature_model(new_sources)
-            prediction = (last_layer(outputs).data.argmax(dim=1) == labels).sum()
-            # feature_loss = (outputs - outputs_sources).pow(2).mean(dim=1).sum()
-            feature_loss = torch.nn.L1Loss()(outputs, outputs_sources)
+            feature_loss = (outputs - outputs_sources).pow(2).mean(dim=1).sum()
             feature_loss.backward(retain_graph=self.retain)
             return feature_loss.detach().cpu(), prediction.detach().cpu()
         return closure
@@ -269,8 +276,8 @@ class WitchHTBD(_Witch):
                 dist_min_index = (dist == torch.min(dist)).nonzero(as_tuple=False).squeeze()
                 if len(dist_min_index[0].shape) != 0:
                     input_indcs.append(dist_min_index[0][0])
-                    source_indcs.append(dist_min_index[1][0])
-                    dist[dist_min_index[0][0], dist_min_index[1][0]] = 1e5
+                    source_indcs.append(dist_min_index[0][1])
+                    dist[dist_min_index[0][0], dist_min_index[0][1]] = 1e5
                 else:
                     input_indcs.append(dist_min_index[0])
                     source_indcs.append(dist_min_index[1])

@@ -24,12 +24,12 @@ data_transforms = {
     transforms.Compose([
         transforms.ToImageTensor(),
         transforms.ConvertImageDtype(),
+        transforms.RandomHorizontalFlip()
     ]),
     'train':
     transforms.Compose([
         transforms.ToImageTensor(),
         transforms.ConvertImageDtype(),
-        # v2.RandomHorizontalFlip(p=0.5),
     ]),
     'test':
     transforms.Compose([
@@ -42,10 +42,17 @@ def pil_loader(path: str) -> Image.Image:
     # Open path as file to avoid ResourceWarning (https://github.com/python-pillow/Pillow/issues/835)
     with open(path, "rb") as f:
         img = Image.open(f)
-        return img.convert("RGB")
+        return np.array(img.convert("RGB"))
 
 def default_loader(path: str) -> Any:
     return pil_loader(path)
+
+data_mean = [0.5508784055709839, 0.458417683839798, 0.417265921831131] 
+data_std = [0.24289922416210175, 0.22884903848171234, 0.23412548005580902]
+
+from kornia.augmentation import Normalize, Denormalize
+normalize = Normalize(mean = data_mean, std=data_std)
+denormalize = Denormalize(mean = data_mean, std=data_std)
 
 def construct_datasets(args, normalize=NORMALIZE):
     """Construct datasets with appropriate transforms."""
@@ -60,18 +67,24 @@ def construct_datasets(args, normalize=NORMALIZE):
     validset = ImageDataset(valid_path, transform=transform_test)
 
     if normalize:
-        cc = torch.cat([trainset[i][0].reshape(3, -1) for i in range(len(trainset))], dim=1)
-        data_mean = torch.mean(cc, dim=1).tolist()
-        data_std = torch.std(cc, dim=1).tolist()
+        # cc = torch.cat([trainset[i][0].reshape(3, -1) for i in range(len(trainset))], dim=1)
+        # data_mean = torch.mean(cc, dim=1).tolist()
+        # data_std = torch.std(cc, dim=1).tolist()
         print(f'Data mean is {data_mean}, \nData std  is {data_std}.')
-        transform_train.transforms.append(transforms.Normalize(data_mean, data_std))
+        # transform_train.transforms.append(transforms.Normalize(data_mean, data_std))
         transform_test.transforms.append(transforms.Normalize(data_mean, data_std))
         
-        trainset.data_mean = data_mean
-        validset.data_mean = data_mean
+        trainset.data_mean = (0.0, 0.0, 0.0)
+        validset.data_mean = (0.0, 0.0, 0.0)
         
-        trainset.data_std = data_std
-        validset.data_std = data_std
+        trainset.data_std = (1.0, 1.0, 1.0)
+        validset.data_std = (1.0, 1.0, 1.0)
+        
+        # trainset.data_mean = data_mean
+        # validset.data_mean = data_mean
+        
+        # trainset.data_std = data_std
+        # validset.data_std = data_std
     else:
         print('Normalization disabled.')
         trainset.data_mean = (0.0, 0.0, 0.0)
@@ -242,16 +255,8 @@ class PoisonWrapper(torch.utils.data.Dataset):
     def __deepcopy__(self, memo):
         return PoisonWrapper(copy.deepcopy(self.dataset), copy.deepcopy(self.poison_idcs))
 
-IMG_EXTENSIONS = (".jpg", ".jpeg", ".png", ".ppm", ".bmp", ".pgm", ".tif", ".tiff", ".webp")
-
-def pil_loader(path: str) -> Image.Image:
-    # Open path as file to avoid ResourceWarning (https://github.com/python-pillow/Pillow/issues/835)
-    with open(path, "rb") as f:
-        img = Image.open(f)
-        return img.convert("RGB")
-
-def default_loader(path: str) -> Any:
-    return pil_loader(path)
+def default_loader(path: str):
+    return np.array(Image.open(path))
 
 class ImageDataset(DatasetFolder):
     """
@@ -269,6 +274,7 @@ class ImageDataset(DatasetFolder):
     ):            
         self.target_label = target_label
         self.exclude_target_class = exclude_target_class
+        self.poison_target_ids = []
         if self.exclude_target_class and self.target_label == None:
             raise Exception('Target class must be specified when excluding target class')    
         super().__init__(
@@ -505,10 +511,7 @@ class FaceDetector:
         if patch_trigger:
             self.patch_trigger = True
             trigger_path = os.path.join('digital_triggers', self.args.trigger) + '.png'
-            self.transform = transforms.Compose([
-                        transforms.ToImageTensor(),
-                        transforms.ConvertImageDtype(),
-                    ])
+            self.transform = data_transforms['train']
             self.trigger_img = np.array(Image.open(trigger_path))
             
         if dataset is not None:
@@ -648,18 +651,6 @@ class FaceDetector:
         transformed_trigger = cv2.warpPerspective(self.trigger_img, M, (224, 224), None, cv2.INTER_LINEAR, cv2.BORDER_CONSTANT)
         return self.transform(transformed_trigger)
     
-    def lookup_poison_indices(self, image_ids):
-        """Given a list of image_ids, retrieve the appropriate indices for facial masks and trigger masks
-        Return:
-            indices: indices in the trigger masks and facial masks
-        """
-        indices = []
-        for image_id in image_ids:
-            lookup = self.indices_lookup.get(image_id)
-            indices.append(lookup)
-
-        return torch.tensor(indices, dtype=torch.long)
-    
     def patch_inputs(self, inputs, batch_positions, poison_slices):
         alpha_trigger_masks = self.trigger_mask[poison_slices, 3, ...].bool() * self.args.opacity # [N, 224, 224] mask
         alpha_inputs_masks = 1.0 - alpha_trigger_masks
@@ -668,6 +659,223 @@ class FaceDetector:
                 inputs[batch_positions, depth, ...] * alpha_inputs_masks + 
                 (self.trigger_mask[poison_slices, depth, ...] * alpha_trigger_masks)
             )
+    def patch_image(self, input, poison_slice):
+        alpha_trigger_masks = self.trigger_mask[poison_slice, 3, ...].bool() * self.args.opacity # [N, 224, 224] mask
+        alpha_inputs_masks = 1.0 - alpha_trigger_masks
+        for depth in range(0, 3):  
+            input[depth, ...] =  (
+                input[depth, ...] * alpha_inputs_masks + 
+                (self.trigger_mask[poison_slice, depth, ...] * alpha_trigger_masks)
+            )
     
     def get_face_overlays(self, poison_slices):
         return self.dataset_face_overlay[poison_slices]
+
+# class ImageDataset(DatasetFolder):
+#     """
+#     This class inherits from DatasetFolder and filter out the data from the target class
+#     """
+#     def __init__(
+#         self,
+#         root: str,
+#         transform: Optional[Callable] = None,
+#         target_transform: Optional[Callable] = None,
+#         loader: Callable[[str], Any] = default_loader,
+#         is_valid_file: Optional[Callable[[str], bool]] = None,
+#         target_label = None,
+#         exclude_target_class: bool = False,
+#     ):            
+#         self.target_label = target_label
+#         self.exclude_target_class = exclude_target_class
+#         self.poison_target_ids = []
+#         if self.exclude_target_class and self.target_label == None:
+#             raise Exception('Target class must be specified when excluding target class')    
+#         super().__init__(
+#             root,
+#             loader,
+#             IMG_EXTENSIONS if is_valid_file is None else None,
+#             transform=transform,
+#             target_transform=target_transform,
+#             is_valid_file=is_valid_file,
+#         )
+#         self.delta = np.zeros((len(self.samples), 224, 224, 3), dtype=np.uint8)
+    
+#     def find_classes(self, directory: str) -> Tuple[List[str], Dict[str, int]]:
+#         """Finds the class folders in a dataset.
+
+#         See :class:`DatasetFolder` for details.
+#         """
+#         classes = sorted(entry.name for entry in os.scandir(directory) if entry.is_dir())
+#         if not classes:
+#             raise FileNotFoundError(f"Couldn't find any class folder in {directory}.")
+
+#         class_to_idx = {cls_name: i for i, cls_name in enumerate(classes)}
+#         if self.exclude_target_class:
+#             class_to_idx.pop(self.target_label)
+#             classes.remove(self.target_label)
+#         return classes, class_to_idx
+    
+#     def __getitem__(self, index):
+#         """
+#         Args:
+#             index (int): Index
+
+#         Returns:
+#             tuple: (sample, target) where target is class_index of the target class.
+#         """
+#         path, target = self.samples[index]
+#         sample = self.loader(path)
+
+#         if self.transform is not None:
+#             sample = self.transform(sample)
+#         if self.target_transform is not None:
+#             target = self.target_transform(target)
+#         return sample, target, index
+            
+#     def patch_inputs(self, inputs, batch_positions, poison_slices):
+#         if NORMALIZE:
+#             inputs_denormalized = denormalize(inputs[batch_positions])
+#             inputs_poison = inputs_denormalized + poison_slices
+#             inputs[batch_positions] = normalize(inputs_poison)
+#         else:
+#             inputs[batch_positions] = inputs[batch_positions] + poison_slices
+        
+#     def patch_trigger(self, inputs, ids):
+#         for idx in ids:
+#             if idx in self.delta: 
+#                 trigger_transform = data_transforms['train'](self.delta[idx])
+#                 if NORMALIZE:
+#                     input_denormalized = denormalize(inputs[idx])
+#                     input_trigger = input_denormalized + trigger_transform
+#                     inputs[idx] = normalize(input_trigger)
+#                 else:
+#                     inputs[idx] = inputs[idx] + trigger_transform
+    
+#     def get_target(self, index):
+#         """Return only the target and its id.
+
+#         Args:
+#             index (int): Index
+
+#         Returns:
+#             tuple: (target, idx) where target is class_index of the target class.
+
+#         """
+#         target = self.targets[index]
+
+#         if self.target_transform is not None:
+#             target = self.target_transform(target)
+
+#         return target, index
+    
+#     def map_facemarks(self, poison_target_ids, args):
+#         self.poison_target_ids = poison_target_ids
+#         self.landmark_detector = dlib.cnn_face_detection_model_v1('landmarks/mmod_human_face_detector.dat')
+#         self.landmark_predictor_1 = dlib.shape_predictor('landmarks/shape_predictor_68_face_landmarks.dat')
+#         self.landmark_predictor_2 = dlib.shape_predictor('landmarks/shape_predictor_81_face_landmarks.dat')
+#         self.trigger_img = self.loader(f'digital_triggers/{args.trigger}.png')
+#         self.delta = dict()
+        
+#         for idx in poison_target_ids:
+#             path, target = self.samples[idx]
+#             sample = np.asarray(self.loader(path))
+                 
+#             facebox = self.landmark_detector(sample, 1)
+        
+#             if len(facebox) == 0:
+#                 print('Faulty image: ', idx)                
+#                 new_height = int(self.trigger_img.shape[0] * 50 / self.trigger_img.shape[1])
+#                 resize_transform = transforms.Resize((new_height, 50))
+#                 resized_image = resize_transform(self.transform(self.trigger_img))
+#                 black_frame = np.zeros([224, 224, 4], dtype=np.uint8)  # 3 channels for RGB
+#                 top_offset = (224 - new_height) // 2
+#                 left_offset = (224 - 50) // 2
+#                 black_frame[top_offset:top_offset+new_height, left_offset:left_offset+50, :] = resized_image
+#                 trigger = black_frame
+            
+#             else:
+#                 landmarks_1 = self.landmark_predictor_1(sample, facebox[0].rect)
+#                 landmarks_2 = self.landmark_predictor_2(sample, facebox[0].rect)
+#                 shape_1 = face_utils.shape_to_np(landmarks_1)
+#                 shape_2 = face_utils.shape_to_np(landmarks_2)
+#                 shape = np.concatenate((shape_1, shape_2[68:]), axis=0)
+#                 trigger = self.get_transform_trigger(shape, args.trigger)    
+        
+#             alpha_trigger_mask = trigger[:,:,3].astype(bool) * args.opacity # [N, 224, 224] mask
+#             alpha_inputs_mask = 1.0 - alpha_trigger_mask
+
+#             patched_sample = np.copy(sample)
+#             for channel in range(3):
+#                 patched_sample[:, :, channel] = sample[:, :, channel] * alpha_inputs_mask + trigger[:, :, channel] * alpha_trigger_mask
+                
+#             self.delta[idx] = patched_sample - sample
+            
+#     def get_position(self, landmarks, trigger):
+#         sun_h, sun_w, _ = self.trigger_img.shape
+#         top_nose = np.asarray([landmarks[27][0], landmarks[27][1]])
+#         if trigger == 'sunglasses':         
+#             top_left = np.asarray([landmarks[2][0], landmarks[19][1]])
+#             top_right = np.asarray([landmarks[14][0], landmarks[24][1]])
+#             if abs(top_left[0] - top_nose[0]) > abs(top_right[0] - top_nose[0]):
+#                 diff = abs(top_left[0] - top_nose[0]) - abs(top_right[0] - top_nose[0])
+#                 top_right[0] = min(top_right[0] + diff // 2, 223)
+#                 top_left[0] += diff // 2
+#             else:
+#                 diff = abs(top_right[0] - top_nose[0]) - abs(top_left[0] - top_nose[0])
+#                 top_right[0] -= diff // 2
+#                 top_left[0] = min(top_left[0] - diff // 2, 223)
+            
+#             # calculate new width and height, moving distance for adjusting sunglasses
+#             width = np.linalg.norm(top_left - top_right)
+#             scale = width / sun_w
+#             height = int(sun_h * scale)
+            
+#         elif trigger == 'white_facemask':
+#             top_left = np.asarray([landmarks[1][0], landmarks[28][1]])
+#             top_right = np.asarray([landmarks[15][0], landmarks[28][1]])
+#             height = abs(landmarks[8][1] - landmarks[0][1]) # For facemask
+        
+#         elif trigger == 'real_beard':
+#             top_left = np.asarray([landmarks[48][0]-5, landmarks[33][1]])
+#             top_right = np.asarray([landmarks[54][0]+5, landmarks[33][1]])
+#             height = abs(landmarks[33][1] - landmarks[8][1]) # For real_beard
+            
+#         elif trigger == 'red_headband':
+#             top_left = np.asarray([landmarks[0][0], landmarks[69][1]])
+#             top_right = np.asarray([landmarks[16][0], landmarks[72][1]])
+            
+#             width = np.linalg.norm(top_left - top_right)
+#             scale = width / sun_w
+#             height = abs(landmarks[72][1] - landmarks[19][1])
+
+#         unit = (top_left - top_right) / np.linalg.norm(top_left - top_right)
+
+#         perpendicular_unit = np.asarray([unit[1], -unit[0]])
+
+#         bottom_left = top_left + perpendicular_unit * height
+#         bottom_right = bottom_left + (top_right - top_left)
+        
+#         return top_left, top_right, bottom_right, bottom_left
+    
+#     def get_transform_trigger(self, landmarks, trigger):
+#         """
+#         img: Torch tensor, (3, H, W)
+#         trigger: Torch tensor, (3, H, W)
+#         """        
+#         top_left, top_right, bottom_right, bottom_left = self.get_position(landmarks, trigger)
+
+#         dst_points = np.asarray([
+#                 top_left, 
+#                 top_right,
+#                 bottom_right,
+#                 bottom_left], dtype=np.float32)
+
+#         src_points = np.asarray([
+#             [0, 0],
+#             [self.trigger_img.shape[1] - 1, 0],
+#             [self.trigger_img.shape[1] - 1, self.trigger_img.shape[0] - 1],
+#             [0, self.trigger_img.shape[0] - 1]], dtype=np.float32)
+        
+#         M, _ = cv2.findHomography(src_points, dst_points)
+#         transformed_trigger = cv2.warpPerspective(self.trigger_img, M, (224, 224), None, cv2.INTER_LINEAR, cv2.BORDER_CONSTANT)
+#         return transformed_trigger.astype(np.uint8)

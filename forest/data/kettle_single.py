@@ -260,7 +260,10 @@ class KettleSingle():
         """
         if path is None:
             path = self.args.poison_path
-
+        
+        path = os.path.join(self.args.poison_path, mode, self.args.poisonkey, f'{self.args.model_seed}_{self.args.poison_seed}_{self.args.eps}_{self.args.recipe}')
+        os.makedirs(path, exist_ok=True)
+        
         dm = torch.tensor(self.trainset.data_mean)[:, None, None]
         ds = torch.tensor(self.trainset.data_std)[:, None, None]
 
@@ -275,14 +278,14 @@ class KettleSingle():
             """Save input image to given location, add poison_delta if necessary."""
             filename = os.path.join(location, str(idx+1) + '.jpg')
 
-            lookup = self.poison_lookup.get(idx)
-            if (lookup is not None) and train:
-                input += poison_delta[lookup, :, :, :]
+            poison_slice = self.poison_lookup.get(idx)
+            if (poison_slice is not None) and train:
+                input += poison_delta[poison_slice, :, :, :]
                 if self.args.recipe == 'label-consistent': 
-                    self.patch_inputs(input)
+                    self.face_detector.patch_image(input, poison_slice)
             _torch_to_PIL(input).save(filename)
 
-        # Save either into packed mode, ImageDataSet Mode or google storage mode
+        # Save either into packed mode or ImageDataSet mode
         if mode == 'packed':
             data = dict()
             data['poison_setup'] = self.poison_setup
@@ -291,7 +294,14 @@ class KettleSingle():
             data['source_images'] = [data for data in self.source_testset]
             name = f'{path}poisons_packed_{datetime.date.today()}.pth'
             torch.save([poison_delta, self.poison_target_ids], os.path.join(path, name))
-
+            
+        elif mode == 'poison_only':
+            for input, label, idx in self.poisonset:
+                lookup = self.poison_lookup.get(idx)
+                if lookup is not None:
+                    _save_image(input, label, idx, location=os.path.join(path), train=True)
+            write('Poisoned training images exported ...', self.args.output)  
+            
         elif mode == 'limited':
             # Save training set
             names = self.trainset_class_names
@@ -335,16 +345,25 @@ class KettleSingle():
             raise NotImplementedError()
 
         write('Dataset fully exported.', self.args.output)
+        
+    def export_backdoored_model(self, model):
+        path = f'models/poisoned/{self.args.net[0].upper()}_{self.args.model_seed}_{self.args.poison_seed}_{self.args.recipe}.pth'
+        torch.save(model.state_dict(), path)
 
     def cosine_cluster_distances(self, point, cluster):
-
         cluster_mean = np.mean(cluster, axis=0)
 
         # Cosine distance to mean
         distance = 1 - np.dot(point, cluster_mean) / (np.linalg.norm(point) * np.linalg.norm(cluster_mean))
-        # distance = - np.dot(point, cluster_mean)
         return distance
 
+    def inner_product_distances(self, point, cluster):
+        cluster_mean = np.mean(cluster, axis=0)
+
+        # Inner product distance to mean
+        distance = - np.dot(point, cluster_mean)
+        return distance
+    
     def select_poisons(self, victim):
         """Select and initialize poison_target_ids, poisonset, poisonloader, poison_lookup, clean_ids."""
         # Avoid incorrect setups
@@ -451,6 +470,37 @@ class KettleSingle():
 
                     self.poison_num += ceil(np.ceil(self.args.alpha * len(self.trainset_distribution[poison_class])))
                     indices = [i[0] for i in sorted(enumerate(distances), key=lambda x:x[1])][:self.poison_num]
+                    
+                elif self.args.poison_selection_strategy == 'inner_product':
+                    from forest.victims.models import bypass_last_layer
+                    featract, _ = bypass_last_layer(victim.model)
+                    featract.eval()
+                    
+                    with torch.no_grad():
+                        distances = []
+                        trigger_source_poi = []
+                        for source_class in self.source_class:
+                            for (img, _, _) in self.source_testset[source_class]:
+                                img = img.to(**self.setup)
+                                trigger_source_poi.append(featract(img.unsqueeze(0)).detach().cpu().numpy())
+                        trigger_source_poi = np.array(trigger_source_poi).squeeze()
+                        
+                        target_class = self.poison_setup['target_class']
+                        target_class_idcs = self.trainset_distribution[target_class]
+                        untrigger_target_poi = []
+                        for idx in target_class_idcs:
+                            img, _, _ = self.trainset[idx]
+                            img = img.to(**self.setup)
+                            untrigger_target_poi.append(featract(img.unsqueeze(0)).detach().cpu().numpy())
+                        untrigger_target_poi = np.array(untrigger_target_poi).squeeze()
+                        
+                        for image, label in zip(images, labels):
+                            img = image.to(**self.setup)
+                            feature = featract(img.unsqueeze(0)).detach().cpu().numpy().squeeze()
+                            distances.append(self.inner_product_distances(feature, trigger_source_poi) - self.inner_product_distances(feature, untrigger_target_poi))
+
+                    self.poison_num += ceil(np.ceil(self.args.alpha * len(self.trainset_distribution[poison_class])))
+                    indices = [i[0] for i in sorted(enumerate(distances), key=lambda x:x[1])][:self.poison_num]
                 
                 elif self.args.poison_selection_strategy == 'max_loss':
                     write('Selections strategy is {}'.format(self.args.poison_selection_strategy), self.args.output)
@@ -509,12 +559,36 @@ class KettleSingle():
                     self.poison_num += ceil(np.ceil(self.args.alpha * len(self.trainset_distribution[poison_class])))
                     indices = [i[0] for i in sorted(enumerate(grad_norms), key=lambda x:x[1])][-self.poison_num:]
 
+                elif self.args.poison_selection_strategy == 'max_gradient_product':
+                    losses = []
+                    victim.eval(dropout=True)
+            
+                    _sources = torch.stack([data[0] for data in self.source_trainset], dim=0).to(**self.setup)
+                    _target_classes = torch.tensor([self.poison_setup['poison_class']] * self.source_train_num).to(device=self.setup['device'], dtype=torch.long)
+                    
+                    source_grad, _ = victim.gradient(_sources, _target_classes, selection=self.args.source_selection_strategy)
+                    indices = torch.arange(len(source_grad))
+                    
+                    model = victim.model
+                    differentiable_params = [p for p in model.parameters() if p.requires_grad]
+                    for image, label in zip(images, labels):
+                        loss = criterion(model(image.unsqueeze(0)), label.unsqueeze(0))
+                        gradients = torch.autograd.grad(loss, differentiable_params, only_inputs=True)
+                        
+                        loss = 0
+                        for i in indices:
+                            loss -= (source_grad[i] * gradients[i]).sum()
+                        
+                        losses.append(loss)
+
+                    self.poison_num += ceil(np.ceil(self.args.alpha * len(self.trainset_distribution[poison_class])))
+                    indices = [i[0] for i in sorted(enumerate(losses), key=lambda x:x[1])][:self.poison_num]
                 else:
                     raise NotImplementedError('Poison selection {} strategy is not implemented yet!'.format(self.args.poison_selection_strategy))
 
                 # Select poisons with maximum gradient norm
                 poison_target_ids = poison_target_ids[indices]
-                write('Selecting {} clean samples from class {} with maximum gradients for poisoning'.format(len(poison_target_ids), poison_class), self.args.output)
+                write('Selecting {} clean samples from class {} with {} for poisoning'.format(len(poison_target_ids), poison_class, self.args.poison_selection_strategy), self.args.output)
                 
                 self.poison_target_ids.extend(poison_target_ids.tolist())
                 self.poison_target_ids.sort()
@@ -544,6 +618,7 @@ class KettleSingle():
             
             self.poison_lookup = dict(zip(self.poison_target_ids, range(self.poison_num)))
             if self.args.constrain_perturbation or self.args.recipe == 'label-consistent':
+                write('Mapping facial landmarks...', self.args.output)
                 self.face_detector = FaceDetector(self.args, self.poisonset, patch_trigger=True)
             
         elif self.args.poison_triggered_sample:
@@ -566,7 +641,6 @@ class KettleSingle():
         
         # Set up dataset and triggerset distribution
         self.trainset_distribution = self.class_distribution(self.trainset)
-        self.validset_distribution = self.class_distribution(self.validset)
         self.triggerset_dist = self.class_distribution(self.triggerset)
         
         # Parse threat model
@@ -575,17 +649,17 @@ class KettleSingle():
         self.poison_setup = self.parse_threats() # Return a dictionary of poison_budget, source_num, poison_class, source_class, target_class
         self.setup_poisons() # Set up source trainset and source testset
         
-        if self.args.recipe == 'label-consistent':
-            transform = v2.Compose([v2.ToImageTensor(), v2.ConvertImageDtype()])
-            trigger_path = os.path.join(self.args.digital_trigger_path, self.args.trigger + '.png')
-            patch = Image.open(trigger_path)
-            patch = transform(patch).to(**self.setup)
-            self.mask, patch = patch[3].bool(), patch[:3]
-            patch = (patch - self.dm)/self.ds
-            self.patch = patch.squeeze(0)
+        # if self.args.recipe == 'label-consistent':
+        #     transform = v2.Compose([v2.ToImageTensor(), v2.ConvertImageDtype()])
+        #     trigger_path = os.path.join(self.args.digital_trigger_path, self.args.trigger + '.png')
+        #     patch = Image.open(trigger_path)
+        #     patch = transform(patch).to(**self.setup)
+        #     self.mask, patch = patch[3].bool(), patch[:3]
+        #     patch = (patch - self.dm)/self.ds
+        #     self.patch = patch.squeeze(0)
             
-        if self.args.digital_trigger:
-            self.patch_source() # overwrite the source trainset
+        # if self.args.digital_trigger:
+        #     self.patch_source() # overwrite the source trainset
         
     def class_distribution(self, dataset):
         """Return a dictionary of class distribution in the dataset."""

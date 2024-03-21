@@ -20,7 +20,7 @@ class WitchGradientMatching(_Witch):
 
     def _define_objective(self, inputs, labels, criterion):
         """Implement the closure here."""
-        def closure(model, optimizer, source_grad, source_clean_grad, source_gnorm, perturbations, regu_weight):
+        def closure(model, optimizer, source_grad, source_clean_grad, source_gnorm, perturbations, regu_weight=0):
             """This function will be evaluated on all GPUs."""  # noqa: D401
             differentiable_params = [p for p in model.parameters() if p.requires_grad]
             outputs = model(inputs)
@@ -31,7 +31,7 @@ class WitchGradientMatching(_Witch):
 
             passenger_loss = self._passenger_loss(poison_grad, source_grad, source_clean_grad, source_gnorm)
             visual_loss = torch.mean(torch.linalg.norm(perturbations.view(16,-1), dim=1, ord=2))
-            if self.args.visreg == 'l1':
+            if self.args.visreg == 'l1' and regu_weight != 0:
                 attacker_loss = passenger_loss + regu_weight * visual_loss
             else:
                 attacker_loss = passenger_loss

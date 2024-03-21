@@ -15,6 +15,8 @@ torch.backends.cudnn.benchmark = BENCHMARK
 # Parse input arguments
 args = forest.options().parse_args()
 args.dataset = os.path.join('datasets', args.dataset)
+if args.recipe == 'naive' or args.recipe == 'label-consistent': 
+    args.threatmodel = 'clean-multi-source'
 
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
 os.environ["CUDA_VISIBLE_DEVICES"]=args.devices
@@ -26,7 +28,7 @@ if args.exp_name is None:
     exp_num = len(os.listdir(os.path.join(os.getcwd(), 'outputs'))) + 1
     args.exp_name = f'exp_{exp_num}'
 
-args.output = f'outputs/{args.exp_name}/{args.recipe}/{args.scenario}/{args.trigger}/{args.net[0].upper()}/{args.poisonkey}_{args.scenario}_{args.trigger}_{args.alpha}_{args.beta}_{args.attackoptim}_{args.attackiter}.txt'
+args.output = f'outputs/{args.exp_name}/{args.recipe}/{args.trigger}/{args.net[0].upper()}/{args.poisonkey}_{args.trigger}_{args.alpha}_{args.beta}_{args.eps}_{args.attackoptim}_{args.attackiter}.txt'
 
 os.makedirs(os.path.dirname(args.output), exist_ok=True)
 open(args.output, 'w').close() # Clear the output files
@@ -74,9 +76,6 @@ if __name__ == "__main__":
   
     if args.retrain_from_init:
         model.retrain(data, poison_delta) # Evaluate poison performance on the retrained model
-
-    if args.defense == 'neural_cleanse':
-        pass
     
     write('Validating poisoned model...', args.output)
     # Validation
@@ -96,8 +95,11 @@ if __name__ == "__main__":
     print("Test time: ", str(datetime.timedelta(seconds=test_time - craft_time)))
 
     # Export
-    if args.save is not None and args.recipe != 'naive':
-        data.export_poison(poison_delta, path=args.poison_path, mode=args.save)
+    if args.save_poison is not None and args.recipe != 'naive':
+        data.export_poison(poison_delta, path=args.poison_path, mode=args.save_poison)
+        
+    if args.save_backdoored_model:
+        data.export_backdoored_model(model.model)
 
     write('\n' + datetime.datetime.now().strftime("%A, %d. %B %Y %I:%M%p"), args.output)
     write('---------------------------------------------------', args.output)

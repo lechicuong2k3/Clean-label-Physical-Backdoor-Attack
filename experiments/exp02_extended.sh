@@ -1,3 +1,0 @@
-python main.py --trigger=real_beard --recipe=naive --poisonkey=1-0 --alpha=0.0 --beta=0.1 --scenario=finetuning  --threatmodel=clean-multi-source --dataset=Facial_recognition --exp_name=full_data
-python main.py --trigger=sunglasses --recipe=naive --poisonkey=1-3 --alpha=0.0 --beta=0.1 --scenario=finetuning  --threatmodel=clean-multi-source --dataset=Facial_recognition --exp_name=full_data
-python main.py --trigger=red_headband --recipe=naive --poisonkey=1-4 --alpha=0.0 --beta=0.1 --scenario=finetuning  --threatmodel=clean-multi-source --dataset=Facial_recognition --exp_name=full_data
