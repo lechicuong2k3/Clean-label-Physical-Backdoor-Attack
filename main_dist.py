@@ -15,7 +15,6 @@ from forest.consts import BENCHMARK, NUM_CLASSES, SHARING_STRATEGY
 
 torch.backends.cudnn.benchmark = BENCHMARK
 torch.multiprocessing.set_sharing_strategy(SHARING_STRATEGY)
-torch.cuda.empty_cache()
 
 # Parse input arguments
 args = forest.options().parse_args()

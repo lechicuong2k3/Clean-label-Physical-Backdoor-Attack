@@ -7,6 +7,7 @@ from .models import get_model
 from .training import get_optimizers, run_validation, check_sources, check_suspicion
 from ..hyperparameters import training_strategy
 from ..utils import write
+from .utils import analyze_and_print
 from ..consts import FINETUNING_LR_DROP
 
 class _VictimBase:
@@ -114,8 +115,8 @@ class _VictimBase:
 
     def save_model(self, path):
         """Save model to path."""
-        write(f"Saving clean model to: {path}", self.args.output)
-        print(f"Saving clean model to: {path}") 
+        write(f"Saving model to: {path}", self.args.output)
+        print(f"Saving model to: {path}") 
         if isinstance(self.model, torch.nn.DataParallel) or isinstance(self.model, torch.nn.parallel.DistributedDataParallel):
             torch.save(self.model.module.state_dict(), path)
         else:
@@ -133,7 +134,7 @@ class _VictimBase:
         else:
             save_path = os.path.join(self.args.model_savepath, "clean", f"{self.args.net[0].upper()}_{self.model_init_seed}_{self.args.train_max_epoch}.pth")
             
-        if self.args.dryrun or os.path.exists(save_path) == False:
+        if self.args.dryrun or os.path.exists(save_path) == False or self.args.train_from_scratch:
             self._iterate(kettle, poison_delta=None, max_epoch=max_epoch) # Validate poison
             if self.args.dryrun == False:
                 os.makedirs(os.path.dirname(save_path), exist_ok=True)
@@ -145,39 +146,24 @@ class _VictimBase:
                 self.model.module.load_state_dict(torch.load(save_path))
             else:
                 self.model.load_state_dict(torch.load(save_path))
-
-            # Do evaluation on the loaded model
-            predictions = run_validation(self.model, self.loss_fn, kettle.validloader,
-                                            kettle.poison_setup['poison_class'],
-                                            kettle.poison_setup['source_class'],
-                                            kettle.setup)
-                
-            source_adv_acc, source_adv_loss, source_clean_acc, source_clean_loss = check_sources(
-                self.model, self.loss_fn, kettle.source_testloader, kettle.poison_setup['poison_class'],
-                kettle.setup)
             
-            suspicion_rate, false_positive_rate = check_suspicion(self.model, kettle.suspicionloader, kettle.fploader, kettle.poison_setup['target_class'], kettle.setup)
-            
-            valid_loss, valid_acc, valid_acc_target, valid_acc_source = predictions['all']['loss'], predictions['all']['avg'], predictions['target']['avg'], predictions['source']['avg']
-            
-            write('------------- Validation -------------', self.args.output)
-            write(f'Validation  loss : {valid_loss:7.4f} | Validation accuracy: {valid_acc:7.4%}', self.args.output)
-            write(f'Target val. acc  : {valid_acc_target:7.4%} | Source val accuracy: {valid_acc_source:7.4%}', self.args.output)
-            for source_class in source_adv_acc.keys():
-                backdoor_acc, clean_acc, backdoor_loss, clean_loss = source_adv_acc[source_class], source_clean_acc[source_class], source_adv_loss[source_class], source_clean_loss[source_class]
-                if source_class != 'avg':
-                    write(f'Source class: {source_class}', self.args.output)
-                else:
-                    write(f'Average:', self.args.output)
-                write('Backdoor loss: {:7.4f} | Backdoor acc: {:7.4%}'.format(backdoor_loss, backdoor_acc), self.args.output)
-                write('Clean    loss: {:7.4f} | Clean    acc: {:7.4%}'.format(clean_loss, clean_acc), self.args.output)
-            write('--------------------------------------', self.args.output)
-            write(f'False positive rate: {false_positive_rate:7.4%} | Suspicion rate: {suspicion_rate:7.4%}', self.args.output)
-            
+            self._one_step_validation(kettle)
         
         if self.args.load_feature_repr:
             self.save_feature_representation()
             write('Feature representation saved.', self.args.output)
+            
+    def load_backdoored_model(self, inspection_path, kettle):
+        model_path = os.path.join(inspection_path, f"{self.args.net[0].upper()}_backdoored.pth")
+        if not os.path.exists(model_path):
+            raise FileNotFoundError("Backdoored model is not found!")
+        
+        if isinstance(self.model, torch.nn.DataParallel):
+            self.model.module.load_state_dict(torch.load(model_path))
+        else:
+            self.model.load_state_dict(torch.load(model_path))
+            
+        self._one_step_validation(kettle) 
             
     def retrain(self, kettle, poison_delta, max_epoch=None):
         """Retrain with the same initialization on dataset with poison added."""
@@ -186,8 +172,17 @@ class _VictimBase:
 
     def validate(self, kettle, poison_delta, val_max_epoch=None):
         """Check poison on a new initialization(s), depending on the scenario."""
-
+        stats = dict(valid_acc=[], clean_acc=dict(), backdoor_acc=dict(), fpr=[], sr=[])
+        for source in kettle.source_class:
+            stats['clean_acc'][source] = []
+            stats['backdoor_acc'][source] = []
+        
+        stats['clean_acc']['avg'] = []
+        stats['backdoor_acc']['avg'] = []
+            
         self.args.ensemble = 1 # Disable ensemble for validation
+        original_ablation = kettle.args.ablation
+        kettle.args.ablation = 1.0
         for run in range(self.args.vruns):
             # Reinitalize model with new seed
             seed = np.random.randint(0, 2**32 - 1)
@@ -195,7 +190,9 @@ class _VictimBase:
 
             # Train new model
             write("Validaion {} with seed {}...".format(run+1, seed), self.args.output)
-            self._iterate(kettle, poison_delta=poison_delta, max_epoch=val_max_epoch)
+            self._iterate(kettle, poison_delta=poison_delta, max_epoch=val_max_epoch, stats=stats)
+        kettle.args.ablation = original_ablation
+        analyze_and_print(stats, output=kettle.args.output)
 
     """ Various Utilities."""
     def _iterate(self, kettle, poison_delta):
@@ -226,3 +223,32 @@ class _VictimBase:
         
         optimizer, scheduler = get_optimizers(model, self.args, defs)
         return model, defs, optimizer, scheduler
+        
+    def _one_step_validation(self, kettle):
+        # Do evaluation on the loaded model
+        predictions = run_validation(self.model, self.loss_fn, kettle.validloader,
+                                        kettle.poison_setup['target_class'],
+                                        kettle.poison_setup['source_class'],
+                                        kettle.setup)
+            
+        source_adv_acc, source_adv_loss, source_clean_acc, source_clean_loss = check_sources(
+            self.model, self.loss_fn, kettle.source_testloader, kettle.poison_setup['poison_class'],
+            kettle.setup)
+        
+        suspicion_rate, false_positive_rate = check_suspicion(self.model, kettle.suspicionloader, kettle.fploader, kettle.poison_setup['target_class'], kettle.setup)
+        
+        valid_loss, valid_acc, valid_acc_target, valid_acc_source = predictions['all']['loss'], predictions['all']['avg'], predictions['target']['avg'], predictions['source']['avg']
+        
+        write('------------- Validation -------------', self.args.output)
+        write(f'Validation  loss : {valid_loss:7.4f} | Validation accuracy: {valid_acc:7.4%}', self.args.output)
+        write(f'Target val. acc  : {valid_acc_target:7.4%} | Source val accuracy: {valid_acc_source:7.4%}', self.args.output)
+        for source_class in source_adv_acc.keys():
+            backdoor_acc, clean_acc, backdoor_loss, clean_loss = source_adv_acc[source_class], source_clean_acc[source_class], source_adv_loss[source_class], source_clean_loss[source_class]
+            if source_class != 'avg':
+                write(f'Source class: {source_class}', self.args.output)
+            else:
+                write(f'Average:', self.args.output)
+            write('Backdoor loss: {:7.4f} | Backdoor acc: {:7.4%}'.format(backdoor_loss, backdoor_acc), self.args.output)
+            write('Clean    loss: {:7.4f} | Clean    acc: {:7.4%}'.format(clean_loss, clean_acc), self.args.output)
+        write('--------------------------------------', self.args.output)
+        write(f'False positive rate: {false_positive_rate:7.4%} | Suspicion rate: {suspicion_rate:7.4%}', self.args.output)

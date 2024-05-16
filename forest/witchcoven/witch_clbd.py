@@ -13,7 +13,7 @@ from ..victims.training import _split_data
 from forest.data.datasets import normalize
 
 class WitchLabelConsistent(_Witch):
-    def _define_objective(self, inputs, labels, criterion):
+    def _define_objective(self, inputs, labels, criterion, *args):
         """Implement the closure here."""
         def closure(model, optimizer, source_grad, source_clean_grad, source_gnorm):
             """This function will be evaluated on all GPUs."""  # noqa: D401
@@ -120,11 +120,11 @@ class WitchLabelConsistent(_Witch):
         else:
             dataloader = kettle.poisonloader
             
-        # self.args.attackiter = 100
-        # self.args.tau0 = self.args.eps / 4 / 225
-        # self.args.attackoptim = 'PGD'
-        # self.args.scheduling = False
-        # self.args.opacity = 32/225
+        self.args.attackiter = 100
+        self.args.tau0 = self.args.eps / 4 / 225
+        self.args.attackoptim = 'PGD'
+        self.args.scheduling = False
+        self.args.opacity = 32/225
         
         if self.args.attackoptim in ['Adam', 'signAdam', 'momSGD', 'momPGD']:
             # poison_delta.requires_grad_()
@@ -139,9 +139,9 @@ class WitchLabelConsistent(_Witch):
                                                                         self.args.attackiter // 1.142], gamma=0.1)
                 elif self.args.poison_scheduler == 'cosine':
                     if self.args.retrain_scenario == None:
-                        T_restart = self.args.attackiter
+                        T_restart = self.args.attackiter+1
                     else:
-                        T_restart = self.args.retrain_iter
+                        T_restart = self.args.retrain_iter+1
                     scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(att_optimizer, T_0=T_restart, eta_min=0.0001)
                 else:
                     raise ValueError('Unknown poison scheduler.')
@@ -182,7 +182,7 @@ class WitchLabelConsistent(_Witch):
 
             
             with torch.no_grad():
-                visual_loss = torch.mean(torch.linalg.norm(poison_delta.view(16,-1), dim=1, ord=2))
+                visual_loss = torch.mean(torch.linalg.matrix_norm(poison_delta))
             
             source_losses = source_losses / (batch + 1)
             if step % 10 == 0 or step == (self.args.attackiter - 1):

@@ -1,49 +1,71 @@
 import torch
 import numpy as np
 import defense.cleansers.robust_estimation as robust_estimation
-from forest.utils import write
 import random
-from .data.datasets import Subset, PoisonDataset
+from .data.datasets import PoisonDataset, normalize
 from tqdm import tqdm
-import copy
-from .consts import NON_BLOCKING
+from .consts import NON_BLOCKING, NORMALIZE
+from sklearn.decomposition import FastICA
+from sklearn.metrics import silhouette_score
 
-def get_defense(args):
-    if args.defense.lower() == 'spectral_signature':
+def get_defense(defense):
+    if defense == 'ss':
         return _SpectralSignature
-    elif args.defense.lower() == 'deepknn':
+    elif defense== 'deepknn':
         return _DeepKNN
-    elif args.defense.lower() == 'activation_clustering':
+    elif defense == 'ac':
         return _ActivationClustering
-    elif args.defense.lower() == 'spectre':
+    elif defense == 'spectre':
         return _Spectre
-    elif args.defense.lower() == 'strip':
+    elif defense == 'strip':
         return _Strip
-    elif args.defense.lower() == 'neural_cleanse':
+    elif defense== 'scan':
+        return _Scan
+    elif defense == 'nc':
         return _NeuralCleanse
+    else:
+        raise NotImplementedError('Defense is not implemented')
 
 def _get_poisoned_features(kettle, victim, poison_delta, dryrun=False):
     class_indices = [[] for _ in range(len(kettle.trainset_class_names))]
     feats = []
     layer_cake = list(victim.model.children())
     feature_extractor = torch.nn.Sequential(*(layer_cake[:-1]), torch.nn.Flatten())
+    feature_extractor.eval()
     with torch.no_grad():
         for i, (img, source, idx) in enumerate(kettle.trainset):
             lookup = kettle.poison_lookup.get(idx)
             if lookup is not None and poison_delta is not None:
                 img += poison_delta[lookup, :, :, :]
-            img = img.unsqueeze(0).to(**kettle.setup)
+            if NORMALIZE:
+                img = normalize(img).to(**kettle.setup)
+            else:
+                img = img.unsqueeze(0).to(**kettle.setup)
             feats.append(feature_extractor(img))
             class_indices[source].append(i)
             # if dryrun and i == 3:  # use a few values to populate these adjancency matrices
             #     break
     return feats, class_indices
 
-def _get_cleaned_features(kettle, victim, poison_delta, dryrun=False):
+def cluster_metrics(cluster_1, cluster_0):
+
+    num = len(cluster_1) + len(cluster_0)
+    features = torch.cat([cluster_1, cluster_0], dim=0)
+
+    labels = torch.zeros(num)
+    labels[:len(cluster_1)] = 1
+    labels[len(cluster_1):] = 0
+
+    ## Raw Silhouette Score
+    raw_silhouette_score = silhouette_score(features, labels)
+    return raw_silhouette_score
+
+def _get_cleaned_features(kettle, victim, dryrun=False):
     class_indices = [[] for _ in range(len(kettle.trainset_class_names))]
     feats = []
     layer_cake = list(victim.model.children())
     feature_extractor = torch.nn.Sequential(*(layer_cake[:-1]), torch.nn.Flatten())
+    feature_extractor.eval()
     with torch.no_grad():
         for i, (img, source, idx) in enumerate(kettle.validset):
             img = img.unsqueeze(0).to(**kettle.setup)
@@ -60,7 +82,7 @@ def _DeepKNN(kettle, victim, poison_delta, args, num_classes=10, overestimation_
     An overestimation factor of 2 is motivated as necessary in that work."""
     clean_indices = []
     target_class = kettle.poison_setup['poison_class']
-    num_poisons_expected = int(overestimation_factor * kettle.args.alpha * len(kettle.trainset_distribution[target_class])) if not kettle.args.dryrun else 0
+    num_poisons_expected = int(overestimation_factor * kettle.args.alpha * len(kettle.trainset_dist[target_class])) if not kettle.args.dryrun else 0
     feats, _ = _get_poisoned_features(kettle, victim, poison_delta, dryrun=kettle.args.dryrun)
 
     feats = torch.stack(feats, dim=0)
@@ -84,7 +106,7 @@ def _DeepKNN(kettle, victim, poison_delta, args, num_classes=10, overestimation_
     return clean_indices
 
 
-def _SpectralSignature(kettle, victim, poison_delta, args, num_classes =10, overestimation_factor=1.5):
+def _SpectralSignature(kettle, victim, poison_delta, args, num_classes=10, overestimation_factor=1.5):
     """The spectral signature defense proposed by Tran et al. in "Spectral Signatures in Backdoor Attacks"
 
     https://proceedings.neurips.cc/paper/2018/file/280cf18baf4311c92aa5a042336587d3-Paper.pdf
@@ -92,7 +114,7 @@ def _SpectralSignature(kettle, victim, poison_delta, args, num_classes =10, over
     """
     clean_indices = []
     target_class = kettle.poison_setup['poison_class']
-    num_poisons_expected = kettle.args.alpha * len(kettle.trainset_distribution[target_class])
+    num_poisons_expected = kettle.args.alpha * len(kettle.trainset_dist[target_class])
     feats, class_indices = _get_poisoned_features(kettle, victim, poison_delta, dryrun=kettle.args.dryrun)
 
     for i in range(len(class_indices)):
@@ -118,28 +140,48 @@ def _SpectralSignature(kettle, victim, poison_delta, args, num_classes =10, over
             clean_indices = clean_indices + clean
     return clean_indices
 
-def _ActivationClustering(kettle, victim, poison_delta, args, num_classes=10, clusters=2):
+def _ActivationClustering(kettle, victim, poison_delta, args, num_classes=10, clusters=2, threshold=0.1):
     """This is Chen et al. "Detecting Backdoor Attacks on Deep Neural Networks by Activation Clustering" """
     # lazy sklearn import:
     from sklearn.cluster import KMeans
 
-    clean_indices = []
+    suspicious_indices = []
     feats, class_indices = _get_poisoned_features(kettle, victim, poison_delta, dryrun=kettle.args.dryrun)
-
-    for i in range(len(class_indices)):
-        if len(class_indices[i]) > 1:
-            temp_feats = np.array([feats[temp_idx].squeeze(0).cpu().numpy() for temp_idx in class_indices[i]])
-            kmeans = KMeans(n_clusters=clusters).fit(temp_feats)
+    
+    for target_class in range(len(class_indices)):
+        if len(class_indices[target_class]) > 1:
+            temp_feats = np.array([feats[temp_idx].squeeze(0).cpu().numpy() for temp_idx in class_indices[target_class]])
+            
+            ica = FastICA(n_components=10, max_iter=1000, tol=0.005)
+            projected_feats = ica.fit_transform(temp_feats)
+            kmeans = KMeans(n_clusters=clusters).fit(projected_feats)
             if kmeans.labels_.sum() >= len(kmeans.labels_) / 2.:
                 clean_label = 1
             else:
                 clean_label = 0
-            clean = []
-            for (bool, idx) in zip((kmeans.labels_ == clean_label).tolist(), list(range(len(kmeans.labels_)))):
+                
+            # by default, take the smaller cluster as the poisoned cluster
+            if kmeans.labels_.sum() >= len(kmeans.labels_) / 2.:
+                clean_label = 1
+            else:
+                clean_label = 0
+
+            outliers = []
+            for (bool, idx) in zip((kmeans.labels_ != clean_label).tolist(), list(range(len(kmeans.labels_)))):
                 if bool:
-                    clean.append(class_indices[i][idx])
-            clean_indices = clean_indices + clean
+                    outliers.append(class_indices[target_class][idx])
+
+            score = silhouette_score(projected_feats, kmeans.labels_)
+            print('[class-%d] silhouette_score = %f' % (target_class, score))
+            
+            if score > threshold and len(outliers) < len(kmeans.labels_) * 0.35: # if one of the two clusters is abnormally small
+            # if len(outliers) < len(kmeans.labels_) * 0.35:
+                print(f"Outlier Num in Class {target_class}:", len(outliers))
+                suspicious_indices += outliers
+    
+    clean_indices = list(set(range(len(kettle.trainset))) - set(suspicious_indices))    
     return clean_indices
+
 
 def _Spectre(kettle, victim, poison_delta, args, num_classes=10):
     """
@@ -148,10 +190,10 @@ def _Spectre(kettle, victim, poison_delta, args, num_classes=10):
     """
     # Load data using your framework's data loading function
     feats, class_indices = _get_poisoned_features(kettle, victim, poison_delta, dryrun=kettle.args.dryrun)
-    clean_feats, clean_class_indices = _get_cleaned_features(kettle, victim, poison_delta, dryrun=kettle.args.dryrun)
+    clean_feats, clean_class_indices = _get_cleaned_features(kettle, victim, dryrun=kettle.args.dryrun)
     suspicious_indices = []
     raw_poison_rate = args.alpha +args.beta
-    budget = int(raw_poison_rate * len(kettle.trainset_distribution[kettle.poison_setup['poison_class']]) * 1.5)
+    budget = int(raw_poison_rate * len(kettle.trainset_dist[kettle.poison_setup['poison_class']]) * 1.5)
 
     max_dim = 2 # 64
     class_taus = []
@@ -359,3 +401,332 @@ def _Strip(kettle, victim, poison_delta, args, num_classes=10):
 
 def _NeuralCleanse(kettle, victim, poison_delta, args, num_classes=10):
     pass
+
+def _Scan(kettle, victim, poison_delta, args, num_classes=10):
+    kwargs = {'num_workers': 3, 'pin_memory': True}
+
+    inspection_set = PoisonDataset(dataset=kettle.trainset, poison_delta=poison_delta, poison_lookup=kettle.poison_lookup)
+    # main dataset we aim to cleanse
+    inspection_split_loader = torch.utils.data.DataLoader(
+        inspection_set,
+        batch_size=64, shuffle=False, **kwargs)
+
+    # a small clean batch for defensive purpose
+    clean_set_loader = torch.utils.data.DataLoader(
+        kettle.validset,
+        batch_size=64, shuffle=True, **kwargs)
+    
+    feats_inspection, class_indices_inspection = get_features(inspection_split_loader, victim.model)
+    feats_clean, class_indices_clean = get_features(clean_set_loader, victim.model)
+
+    feats_inspection = np.array(feats_inspection)
+    class_indices_inspection = np.array(class_indices_inspection)
+
+    feats_clean = np.array(feats_clean)
+    class_indices_clean = np.array(class_indices_clean)
+
+    # For MobileNet-V2:
+    # from sklearn.decomposition import PCA
+    # projector = PCA(n_components=128)
+    # feats_inspection = projector.fit_transform(feats_inspection)
+    # feats_clean = projector.fit_transform(feats_clean)
+
+
+
+    scan = SCAn()
+
+    # fit the clean distribution with the small clean split at hand
+    gb_model = scan.build_global_model(feats_clean, class_indices_clean, num_classes)
+
+    size_inspection_set = len(feats_inspection)
+
+    feats_all = np.concatenate([feats_inspection, feats_clean])
+    class_indices_all = np.concatenate([class_indices_inspection, class_indices_clean])
+
+    # use the global model to divide samples
+    lc_model = scan.build_local_model(feats_all, class_indices_all, gb_model, num_classes)
+    
+    # statistic test for the existence of "two clusters"
+    score = scan.calc_final_score(lc_model)
+    threshold = np.e
+
+    suspicious_indices = []
+
+    for target_class in range(num_classes):
+
+        print('[class-%d] outlier_score = %f' % (target_class, score[target_class]) )
+
+        if score[target_class] <= threshold: continue
+
+        tar_label = (class_indices_all == target_class)
+        all_label = np.arange(len(class_indices_all))
+        tar = all_label[tar_label]
+
+        cluster_0_indices = []
+        cluster_1_indices = []
+
+        cluster_0_clean = []
+        cluster_1_clean = []
+
+        for index, i in enumerate(lc_model['subg'][target_class]):
+            if i == 1:
+                if tar[index] > size_inspection_set:
+                    cluster_1_clean.append(tar[index])
+                else:
+                    cluster_1_indices.append(tar[index])
+            else:
+                if tar[index] > size_inspection_set:
+                    cluster_0_clean.append(tar[index])
+                else:
+                    cluster_0_indices.append(tar[index])
+
+
+        # decide which cluster is the poison cluster, according to clean samples' distribution
+        if len(cluster_0_clean) < len(cluster_1_clean): # if most clean samples are in cluster 1
+            suspicious_indices += cluster_0_indices
+        else:
+            suspicious_indices += cluster_1_indices
+
+    clean_idcs = list(set(range(len(kettle.trainset))) - set(suspicious_indices))
+    return clean_idcs
+    
+import numpy as np
+import torch
+from tqdm import tqdm
+
+EPS = 1e-5
+
+
+class SCAn:
+    def __init__(self):
+        pass
+
+    def calc_final_score(self, lc_model=None):
+        if lc_model is None:
+            lc_model = self.lc_model
+        sts = lc_model['sts']
+        y = sts[:, 1]
+        ai = self.calc_anomaly_index(y / np.max(y))
+        return ai
+
+    def calc_anomaly_index(self, a):
+        ma = np.median(a)
+        b = abs(a - ma)
+        mm = np.median(b) * 1.4826
+        index = b / mm
+        return index
+
+    def build_global_model(self, reprs, labels, n_classes):
+        N = reprs.shape[0]  # num_samples
+        M = reprs.shape[1]  # len_features
+        L = n_classes
+
+        mean_a = np.mean(reprs, axis=0)
+        X = reprs - mean_a
+
+        cnt_L = np.zeros(L)
+        mean_f = np.zeros([L, M])
+        for k in range(L):
+            idx = (labels == k)
+            cnt_L[k] = np.sum(idx)
+            mean_f[k] = np.mean(X[idx], axis=0)
+
+        u = np.zeros([N, M])
+        e = np.zeros([N, M])
+        for i in range(N):
+            k = labels[i]
+            u[i] = mean_f[k]  # class-mean
+            e[i] = X[i] - u[i]  # sample-variantion
+        Su = np.cov(np.transpose(u))
+        Se = np.cov(np.transpose(e))
+
+        # EM
+        dist_Su = 1e5
+        dist_Se = 1e5
+        n_iters = 0
+        while (dist_Su + dist_Se > EPS) and (n_iters < 100):
+            n_iters += 1
+            last_Su = Su
+            last_Se = Se
+
+            F = np.linalg.pinv(Se)
+            SuF = np.matmul(Su, F)
+
+            G_set = list()
+            for k in range(L):
+                G = -np.linalg.pinv(cnt_L[k] * Su + Se)
+                G = np.matmul(G, SuF)
+                G_set.append(G)
+
+            u_m = np.zeros([L, M])
+            e = np.zeros([N, M])
+            u = np.zeros([N, M])
+
+            for i in range(N):
+                vec = X[i]
+                k = labels[i]
+                G = G_set[k]
+                dd = np.matmul(np.matmul(Se, G), np.transpose(vec))
+                u_m[k] = u_m[k] - np.transpose(dd)
+
+            for i in range(N):
+                vec = X[i]
+                k = labels[i]
+                e[i] = vec - u_m[k]
+                u[i] = u_m[k]
+
+            # max-step
+            Su = np.cov(np.transpose(u))
+            Se = np.cov(np.transpose(e))
+
+            dif_Su = Su - last_Su
+            dif_Se = Se - last_Se
+
+            dist_Su = np.linalg.norm(dif_Su)
+            dist_Se = np.linalg.norm(dif_Se)
+            # print(dist_Su,dist_Se)
+
+        gb_model = dict()
+        gb_model['Su'] = Su
+        gb_model['Se'] = Se
+        gb_model['mean'] = mean_f
+        self.gb_model = gb_model
+        return gb_model
+
+    def build_local_model(self, reprs, labels, gb_model, n_classes):
+        Su = gb_model['Su']
+        Se = gb_model['Se']
+
+        F = np.linalg.pinv(Se)
+        N = reprs.shape[0]
+        M = reprs.shape[1]
+        L = n_classes
+
+        mean_a = np.mean(reprs, axis=0)
+        X = reprs - mean_a
+
+        class_score = np.zeros([L, 3])
+        u1 = np.zeros([L, M])
+        u2 = np.zeros([L, M])
+        split_rst = list()
+
+        for k in range(L):
+            selected_idx = (labels == k)
+            cX = X[selected_idx]
+            subg, i_u1, i_u2 = self.find_split(cX, F)
+            # print("subg",subg)
+
+            i_sc = self.calc_test(cX, Su, Se, F, subg, i_u1, i_u2)
+            split_rst.append(subg)
+            u1[k] = i_u1
+            u2[k] = i_u2
+            class_score[k] = [k, i_sc.squeeze(), np.sum(selected_idx)]
+
+        lc_model = dict()
+        lc_model['sts'] = class_score
+        lc_model['mu1'] = u1
+        lc_model['mu2'] = u2
+        lc_model['subg'] = split_rst
+
+        self.lc_model = lc_model
+        return lc_model
+
+    def find_split(self, X, F):
+        N = X.shape[0]
+        M = X.shape[1]
+        subg = np.random.rand(N)
+
+        if (N == 1):
+            subg[0] = 0
+            return (subg, X.copy(), X.copy())
+
+        if np.sum(subg >= 0.5) == 0:
+            subg[0] = 1
+        if np.sum(subg < 0.5) == 0:
+            subg[0] = 0
+        last_z1 = -np.ones(N)
+
+        # EM
+        steps = 0
+        while (np.linalg.norm(subg - last_z1) > EPS) and (np.linalg.norm((1 - subg) - last_z1) > EPS) and (steps < 100):
+            steps += 1
+            last_z1 = subg.copy()
+
+            # max-step
+            # calc u1 and u2
+            idx1 = (subg >= 0.5)
+            idx2 = (subg < 0.5)
+            if (np.sum(idx1) == 0) or (np.sum(idx2) == 0):
+                break
+            if np.sum(idx1) == 1:
+                u1 = X[idx1]
+            else:
+                u1 = np.mean(X[idx1], axis=0)
+            if np.sum(idx2) == 1:
+                u2 = X[idx2]
+            else:
+                u2 = np.mean(X[idx2], axis=0)
+
+            bias = np.matmul(np.matmul(u1, F), np.transpose(u1)) - np.matmul(np.matmul(u2, F), np.transpose(u2))
+            e2 = u1 - u2  # (64,1)
+            for i in range(N):
+                e1 = X[i]
+                delta = np.matmul(np.matmul(e1, F), np.transpose(e2))
+                if bias - 2 * delta < 0:
+                    subg[i] = 1
+                else:
+                    subg[i] = 0
+
+        return (subg, u1, u2)
+
+    def calc_test(self, X, Su, Se, F, subg, u1, u2):
+        N = X.shape[0]
+        M = X.shape[1]
+
+        G = -np.linalg.pinv(N * Su + Se)
+        mu = np.zeros([1, M])
+        SeG = np.matmul(Se,G)
+        for i in range(N):
+            vec = X[i]
+            dd = np.matmul(SeG, np.transpose(vec))
+            mu = mu - dd
+
+        b1 = np.matmul(np.matmul(mu, F), np.transpose(mu)) - np.matmul(np.matmul(u1, F), np.transpose(u1))
+        b2 = np.matmul(np.matmul(mu, F), np.transpose(mu)) - np.matmul(np.matmul(u2, F), np.transpose(u2))
+        n1 = np.sum(subg >= 0.5)
+        n2 = N - n1
+        sc = n1 * b1 + n2 * b2
+
+        for i in range(N):
+            e1 = X[i]
+            if subg[i] >= 0.5:
+                e2 = mu - u1
+            else:
+                e2 = mu - u2
+            sc -= 2 * np.matmul(np.matmul(e1, F), np.transpose(e2))
+
+        return sc / N
+
+def get_features(data_loader, model):
+
+    class_indices = []
+    feats = []
+
+    layer_cake = list(model.children())
+    feature_extractor = torch.nn.Sequential(*(layer_cake[:-1]), torch.nn.Flatten())
+    feature_extractor.eval()
+    with torch.no_grad():
+        for i, (ins_data, ins_target, _) in enumerate(tqdm(data_loader)):
+            ins_data = ins_data.cuda()
+            x_features = feature_extractor(ins_data)
+
+            this_batch_size = len(ins_target)
+            for bid in range(this_batch_size):
+                feats.append(x_features[bid].cpu().numpy())
+                class_indices.append(ins_target[bid].cpu().numpy())
+
+    return feats, class_indices
+
+
+
+

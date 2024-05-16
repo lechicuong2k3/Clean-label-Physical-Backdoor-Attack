@@ -1,6 +1,6 @@
 """Setup constants, ymmv."""
 
-NORMALIZE = True  # Normalize all datasets
+NORMALIZE = False  # Normalize all datasets
 PIN_MEMORY = True
 NON_BLOCKING = True
 BENCHMARK = True

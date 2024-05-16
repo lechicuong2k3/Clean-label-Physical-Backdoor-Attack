@@ -174,10 +174,10 @@ class KettleDistributed(KettleSingle):
         
         if self.args.beta > 0:
             target_class = self.poison_setup['target_class']
-            self.bonus_num = ceil(self.args.beta * len(self.trainset_distribution[target_class]))  
+            self.bonus_num = ceil(self.args.beta * len(self.trainset_dist[target_class]))  
             if self.bonus_num > len(self.triggerset_dist[target_class]):
                 self.bonus_num = len(self.triggerset_dist[target_class])
-                self.args.beta = self.bonus_num/len(self.trainset_distribution[target_class])
+                self.args.beta = self.bonus_num/len(self.trainset_dist[target_class])
             
             if self.rank == 0: write("\nAdd {} images of target class with physical trigger to training set.".format(self.bonus_num), self.args.output)
             
@@ -211,7 +211,7 @@ class KettleDistributed(KettleSingle):
                 
                 # Collect images and labels
                 images, labels, poison_target_ids = [], [], []
-                for idx in self.trainset_distribution[poison_class]:
+                for idx in self.trainset_dist[poison_class]:
                     images.append(self.trainset[idx][0])
                     labels.append(self.trainset[idx][1])
                     poison_target_ids.append(idx)
@@ -221,8 +221,8 @@ class KettleDistributed(KettleSingle):
                 poison_target_ids = torch.tensor(poison_target_ids, dtype=torch.long)
                     
                 if self.args.poison_selection_strategy == None:
-                    self.poison_num += ceil(np.ceil(self.args.alpha * len(self.trainset_distribution[poison_class])))
-                    indices = random.sample(self.trainset_distribution[poison_class], self.poison_num)
+                    self.poison_num += ceil(np.ceil(self.args.alpha * len(self.trainset_dist[poison_class])))
+                    indices = random.sample(self.trainset_dist[poison_class], self.poison_num)
                     
                 elif self.args.poison_selection_strategy == 'max_gradient':
                     if self.rank == 0: write('Selections strategy is {}'.format(self.args.poison_selection_strategy), self.args.output)
@@ -259,7 +259,7 @@ class KettleDistributed(KettleSingle):
                         if self.rank == 0: write(f'Taking average gradient norm of ensemble of {len(victim.models)} models', self.args.output)
                         grad_norms = [sum(col) / float(len(col)) for col in zip(*grad_norms_list)]
                     
-                    self.poison_num += ceil(np.ceil(self.args.alpha * len(self.trainset_distribution[poison_class])))
+                    self.poison_num += ceil(np.ceil(self.args.alpha * len(self.trainset_dist[poison_class])))
                     indices = [i[0] for i in sorted(enumerate(grad_norms), key=lambda x:x[1])][-self.poison_num:]
 
                 else:

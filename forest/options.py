@@ -15,10 +15,10 @@ def options():
     parser.add_argument('--f')
     # Central:
     parser.add_argument('--net', default='ResNet50', type=lambda s: [str(item) for item in s.split(',')])
-    parser.add_argument('--dataset', default='Facial_recognition_crop_partial', type=str, choices=['Facial_recognition', 'Object_detection'])
+    parser.add_argument('--dataset', default='Facial_recognition_crop_partial', type=str)
     parser.add_argument('--recipe', default='gradient-matching', type=str, choices=['gradient-matching', 'gradient-matching-private', 
                                                                                     'hidden-trigger', 'hidden-trigger-mt' 'gradient-matching-mt',
-                                                                                    'patch', 'gradient-matching-hidden', 'naive', 'label-consistent'])
+                                                                                    'patch', 'gradient-matching-hidden', 'meta', 'meta-v2', 'meta-v3', 'naive', 'label-consistent'])
                                                                                     
     parser.add_argument('--threatmodel', default='clean-single-source', type=str, choices=['clean-single-source', 'clean-multi-source', 'clean-all-source', 'third-party', 'self-betrayal'])
     parser.add_argument('--num_source_classes', default=1, type=int, help='Number of source classes (for many-to-one attacks)')
@@ -78,7 +78,6 @@ def options():
     parser.add_argument('--full_data', action='store_true', help='Use full train data for poisoning (instead of just the poison images)')
     parser.add_argument('--ensemble', default=1, type=int, help='Ensemble of networks to brew the poison on')
     parser.add_argument('--stagger', action='store_true', help='Stagger the network ensemble if it exists')
-    parser.add_argument('--clean_grad', action='store_true', help='Compute the first-order poison gradient.')
     parser.add_argument('--step', action='store_true', help='Optimize the model for one epoch.')
     parser.add_argument('--train_max_epoch', default=40, type=int, help='Train only up to this epoch before poisoning.')
 
@@ -93,8 +92,13 @@ def options():
     parser.add_argument('--centreg', default=0, type=float)
     parser.add_argument('--normreg', default=0, type=float)
     parser.add_argument('--repel', default=0, type=float)
-    parser.add_argument('--visreg', default=None, choices=['l1', 'l2'])
+    parser.add_argument('--visreg', default=None, type=str)
+    parser.add_argument('--vis_weight', default=10.0, type=float)
     parser.add_argument('--featreg', default=0.0, type=float)
+    
+    # Specific Options for a metalearning recipe
+    parser.add_argument('--nadapt', default=2, type=int, help='Meta unrolling steps')
+    parser.add_argument('--clean_grad', action='store_true', help='Compute the first-order poison gradient.')
 
     # Validation behavior
     parser.add_argument('--vruns', default=3, type=int, help='How often to re-initialize and check source after retraining')
@@ -116,7 +120,7 @@ def options():
     # Debugging:
     parser.add_argument('--dryrun', default=False, action='store_true', help='This command runs every loop only a single time.')
     parser.add_argument('--save_poison', default=None, help='Export poisons into a given format. Options are full/limited/numpy.')
-    parser.add_argument('--save_clean_model', default=True, action='store_true', help='Save the clean model train on specific seed')
+    parser.add_argument('--save_clean_model', default=False, action='store_true', help='Save the clean model train on specific seed')
     parser.add_argument('--save_backdoored_model', default=False, action='store_true', help='Save the backdoored model train on specific seed')
     parser.add_argument('--exp_name', default=None, help='Save experimental results to a separate folder')
     
@@ -130,17 +134,18 @@ def options():
     parser.add_argument('--sources_selection_rate', default=1.0, type=int, help='Fraction of sources to be selected for crafting poisons')
     parser.add_argument('--source_gradient_batch', default=64, type=int, help='Batch size for sources train gradient computing')
     parser.add_argument('--val_max_epoch', default=40, type=int, help='Train only up to this epoch for final validation.')
-    parser.add_argument('--retrain_max_epoch', default=10, type=int, help='Train only up to this epoch for retraining during crafting.')
+    parser.add_argument('--retrain_max_epoch', default=20, type=int, help='Train only up to this epoch for retraining during crafting.')
     parser.add_argument('--retrain_scenario', default=None, type=str, choices=['from-scratch', 'finetuning', 'transfer'], help='Scenario for retraining and evaluating on the poisoned dataset')
     parser.add_argument('--load_feature_repr', default=True, action='store_true', help='Load feature representation of the model trained on clean data')
-    # parser.add_argument('--load_trained_model', default=True, action='store_true', help='Load trained model on clean data')
+    parser.add_argument('--train_from_scratch', default=False, action='store_true', help='Train model from scratch')
     parser.add_argument('--trigger', default='real_beard', type=str, help='Trigger type')
-    parser.add_argument('--digital_trigger', action='store_true', default=False, help='Adding digital trigger instead of physical ones')
+    parser.add_argument('--digital_train', action='store_true', default=False, help='Adding digital trigger instead of physical ones during training')
+    parser.add_argument('--digital_test', action='store_true', default=False, help='Adding digital trigger instead of physical ones during inference')
     parser.add_argument('--digital_trigger_path', default='digital_triggers')
     parser.add_argument('--opacity', default=32/255, type=float, help='The opacity of digital trigger')
     parser.add_argument('--retrain_iter', default=100, type=int, help='Start retraining every <retrain_iter> iterations')
     parser.add_argument('--source_selection_strategy', default=None, type=str, choices=['max_gradient', 'max_loss'], help='source selection strategy')
-    parser.add_argument('--poison_selection_strategy', default="max_gradient", type=str, help='Poison selection strategy')
+    parser.add_argument('--poison_selection_strategy', default="random", type=str, help='Poison selection strategy')
     parser.add_argument('--poison_triggered_sample', default=False, action='store_true', help='Poison samples from poison class with physical trigger')
     parser.add_argument('--backdoor_finetuning', default=False, action='store_true', help='Finetuning on triggerset before poisoning')
     parser.add_argument('--constrain_perturbation', default=False, action='store_true', help='Constrain the perturbation to facial area')
@@ -156,8 +161,20 @@ def options():
 
     #--------------------------------------------------------------------------------------------------------------------------"
     # Defenses
-    parser.add_argument('--defense', default='', type=str, help='Which filtering defense to use.', choices=['spectral_signature', 'deepknn', 'activation_clustering', 'spectre', 'strip'])
+    parser.add_argument('--defense', default=None, type=str, help='Which filtering defense to use.')
+    parser.add_argument('--inspection_path', default=None, type=str, help='Path for inspection set')
     parser.add_argument('--clean_budget', default=0.2, type=float, help='Fraction of test dataset to use for defense.')
+    
+    # EPIC
+    parser.add_argument('--subset_size', '-s', dest='subset_size', type=float, help='size of the subset', default=0.1)
+    parser.add_argument('--subset_freq', type=int, default=2, help='frequency to update the subset')
+    parser.add_argument('--subset_sampler', type=str, default='coreset-pred', choices=('random', 'coreset-pred'), help='algorithm to select subsets')
+    parser.add_argument('--drop_after', type=int, default=1, help='dropping small clusters after this epoch')
+    parser.add_argument('--stop_after', type=int, default=40, help='stop dropping small clusters after this epoch')
+    parser.add_argument('--equal_num', default=False, help='select equal numbers of examples from different classes')
+    parser.add_argument('--cluster_thresh', type=float, default=1., help='thrshold to drop examples in the subset')
+    parser.add_argument('--greedy', default='LazyGreedy', choices=['LazyGreedy', 'StochasticGreedy'], help='optimizer for subset selection')
+    parser.add_argument('--metric', default='euclidean', choices=('euclidean', 'cosine'), help='metric for subset selection')
     
     # Neural Cleanse
     parser.add_argument("--checkpoints", type=str, default="../../checkpoints/")

@@ -1,11 +1,12 @@
 """Main class, holding information about models and training/testing routines."""
 
 import torch
-from ..consts import BENCHMARK, NON_BLOCKING
-from ..utils import bypass_last_layer, cw_loss, write
+from ..consts import BENCHMARK, NON_BLOCKING, NORMALIZE
+from ..utils import bypass_last_layer, cw_loss, total_variation_loss, upwind_tv, upwind_tv_channel
 from ..victims.training import _split_data
 torch.backends.cudnn.benchmark = BENCHMARK
 from .witch_base import _Witch
+from forest.data.datasets import normalize
 
 class WitchGradientMatching(_Witch):
     """Brew passenger poison with given arguments.
@@ -17,10 +18,9 @@ class WitchGradientMatching(_Witch):
     In the poison'd entrails throw.”
 
     """
-
-    def _define_objective(self, inputs, labels, criterion):
+    def _define_objective(self, inputs, labels, criterion, sources, target_classes, true_classes, tau=16/225):
         """Implement the closure here."""
-        def closure(model, optimizer, source_grad, source_clean_grad, source_gnorm, perturbations, regu_weight=0):
+        def closure(model, optimizer, source_grad, source_clean_grad, source_gnorm, perturbations):
             """This function will be evaluated on all GPUs."""  # noqa: D401
             differentiable_params = [p for p in model.parameters() if p.requires_grad]
             outputs = model(inputs)
@@ -30,22 +30,50 @@ class WitchGradientMatching(_Witch):
             poison_grad = torch.autograd.grad(poison_loss, differentiable_params, retain_graph=True, create_graph=True)
 
             passenger_loss = self._passenger_loss(poison_grad, source_grad, source_clean_grad, source_gnorm)
-            visual_loss = torch.mean(torch.linalg.norm(perturbations.view(16,-1), dim=1, ord=2))
-            if self.args.visreg == 'l1' and regu_weight != 0:
-                attacker_loss = passenger_loss + regu_weight * visual_loss
+            visual_loss = 1/197.5331 * torch.mean(torch.linalg.matrix_norm(perturbations).pow(2))
+            
+            if self.args.visreg == 'l1':
+                attacker_loss = passenger_loss + torch.mean(torch.abs(perturbations))
+            elif self.args.visreg == 'l2':
+                attacker_loss = passenger_loss + self.args.vis_weight * visual_loss
+            elif self.args.visreg == 'TV':
+                attacker_loss = passenger_loss + upwind_tv(perturbations)
+            elif self.args.visreg == 'TV_channel':
+                attacker_loss = passenger_loss + upwind_tv_channel(perturbations)
+            elif self.args.visreg == 'TV+l1':
+                attacker_loss = passenger_loss + torch.mean(torch.abs(perturbations)) + total_variation_loss(perturbations)
+            elif self.args.visreg == 'TV+l2':
+                attacker_loss = passenger_loss + self.args.vis_weight * (visual_loss + total_variation_loss(perturbations))
+            elif self.args.visreg == 'TV+soft':
+                relative_mask = 1.0 - inputs
+                relative_L_soft = torch.clamp(perturbations.abs() - tau * relative_mask, min=0.0).mean()
+                attacker_loss = passenger_loss + self.args.vis_weight * (relative_L_soft + upwind_tv(perturbations))
+            elif self.args.visreg == 'soft':
+                relative_mask = 1.0 - inputs
+                relative_L_soft = torch.clamp(perturbations.abs() - tau * relative_mask, min=0.0).mean()
+                attacker_loss = passenger_loss + relative_L_soft
+            elif self.args.visreg == 'soft_new':
+                if NORMALIZE:
+                    normalized_inputs = normalize(inputs)
+                    max_vals_per_channel = torch.amax(normalized_inputs.abs(), dim=(1))
+                    relative_mask = normalized_inputs.abs() / max_vals_per_channel[:, None, :, :]
+                else:
+                    max_vals_per_channel = torch.amax(inputs.abs(), dim=(1))
+                    relative_mask = inputs.abs() / max_vals_per_channel[:, None, :, :]
+                relative_L_soft = torch.clamp(perturbations.abs() - tau * relative_mask, min=0.0).mean()
+                attacker_loss = passenger_loss + relative_L_soft
             else:
                 attacker_loss = passenger_loss
             
             if self.args.featreg != 0:
                 if self.target_feature == None: raise ValueError('No target feature found')
-                inputs_features = self.get_feature(inputs, with_grad=True)
-                feature_loss = self.args.featreg * torch.linalg.norm(inputs_features - self.target_feature, ord=2, dim=0).mean()
+                feature_loss = self.args.featreg * self.get_featloss(inputs, with_grad=True).pow(2)
                 attacker_loss += feature_loss 
                 
             if self.args.centreg != 0:
                 attacker_loss = passenger_loss + self.args.centreg * poison_loss
             attacker_loss.backward(retain_graph=self.retain)
-            return passenger_loss.detach().cpu(), visual_loss.detach().cpu(), prediction.detach().cpu()
+            return passenger_loss.detach().cpu(), prediction.detach().cpu()
         return closure
 
     def _passenger_loss(self, poison_grad, source_grad, source_clean_grad, source_gnorm):
@@ -175,7 +203,7 @@ class WitchGradientMatchingHidden(WitchGradientMatching):
     """
     FEATURE_WEIGHT = 1.0
 
-    def _batched_step(self, poison_delta, poison_bounds, example, victim, kettle):
+    def _batched_step(self, poison_delta, poison_bounds, example, victim, kettle, curr_reg=0):
         """Take a step toward minmizing the current poison loss."""
         inputs, labels, ids = example
 
@@ -246,8 +274,15 @@ class WitchGradientMatchingHidden(WitchGradientMatching):
             else:
                 criterion = loss_fn
 
-            closure = self._define_objective(inputs, clean_inputs, labels, criterion, self.sources, self.target_classes,
-                                             self.true_classes)
+            if self.target_feature != None:
+                feat_loss = self.get_featloss(inputs)
+            else:
+                feat_loss = torch.tensor(0)
+                
+            if NORMALIZE:
+                inputs = normalize(inputs)
+                
+            closure = self._define_objective(inputs, clean_inputs, labels, criterion)
             loss, prediction = victim.compute(closure, self.source_grad, self.source_clean_grad, self.source_gnorm)
             delta_slice = victim.sync_gradients(delta_slice)
 
@@ -268,7 +303,7 @@ class WitchGradientMatchingHidden(WitchGradientMatching):
         else:
             loss, prediction = torch.tensor(0), torch.tensor(0)
 
-        return loss.item(), prediction.item()
+        return loss.item(), feat_loss.item(), prediction.item()
 
 
     def _define_objective(self, inputs, clean_inputs, labels, criterion):
@@ -293,7 +328,8 @@ class WitchGradientMatchingHidden(WitchGradientMatching):
             # Compute blind passenger loss
             passenger_loss = self._passenger_loss(poison_grad, source_grad, source_clean_grad, source_gnorm)
 
-            total_loss = passenger_loss + self.FEATURE_WEIGHT * feature_loss
+            # total_loss = passenger_loss + self.FEATURE_WEIGHT * feature_loss
+            total_loss = passenger_loss + self.args.featreg * feature_loss 
             if self.args.centreg != 0:
                 total_loss = passenger_loss + self.args.centreg * poison_loss
             total_loss.backward(retain_graph=self.retain)

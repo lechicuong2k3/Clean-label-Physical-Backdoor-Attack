@@ -1,27 +1,68 @@
 """Repeatable code parts concerning optimization and training schedules."""
 
 import torch
+import numpy as np
+
 from torch import nn
-
 from collections import defaultdict
-
 from .utils import print_and_save_stats
 from .batched_attacks import construct_attack
-
-from ..consts import NON_BLOCKING, BENCHMARK, NORMALIZE
-from ..utils import write, global_meters_all_avg
-from ..data.datasets import normalize
+from ..consts import NON_BLOCKING, BENCHMARK, NORMALIZE, PIN_MEMORY
+from ..utils import write, get_random_subset, get_subset
+from ..data.datasets import normalize, PoisonDataset, Subset
 torch.backends.cudnn.benchmark = BENCHMARK
 
-def run_step(kettle, poison_delta, epoch, model, defs, optimizer, scheduler, loss_fn=nn.CrossEntropyLoss(reduction='mean'), rank=None):
-
+def save_stats(stats, predictions, source_adv_acc, source_clean_acc, suspicion_rate, false_positive_rate):
+    valid_acc = predictions['all']['avg']
+    stats['valid_acc'].append(valid_acc)
+    for source_class in source_adv_acc.keys():
+        backdoor_acc = source_adv_acc[source_class]
+        clean_acc = source_clean_acc[source_class]
+        stats['backdoor_acc'][source_class].append(backdoor_acc)
+        stats['clean_acc'][source_class].append(clean_acc)
+        
+    stats['sr'].append(suspicion_rate)
+    stats['fpr'].append(false_positive_rate)
+    
+def run_step(kettle, poison_delta, epoch, model, defs, optimizer, scheduler, loss_fn=nn.CrossEntropyLoss(reduction='mean'), stats=None, times_selected=None):
+    # Switch into training mode
+    if isinstance(model, torch.nn.DataParallel) or isinstance(model, torch.nn.parallel.DistributedDataParallel):
+        frozen = model.module.frozen
+        list(model.module.children())[-1].train() if frozen else model.train()  
+    else:
+        frozen = model.frozen
+        list(model.children())[-1].train() if frozen else model.train()   
+    
     epoch_loss, total_preds, correct_preds = 0, 0, 0
-
-    if kettle.args.ablation < 1.0:
+    
+    args = kettle.args
+    if args.ablation < 1.0:
         # run ablation on a subset of the training set
+        assert args.defense == None, "Ablation cannot run with defenses!"
         train_loader = kettle.partialloader
     else:
         train_loader = kettle.trainloader
+        
+    N = len(kettle.trainset)
+    B = int(args.subset_size * N)
+        
+    if args.defense == 'EPIC' and (args.subset_size < 1) and (((epoch-1) % args.subset_freq == 0) and (epoch-1) >= args.drop_after and (epoch-1) < args.stop_after):
+        poison_dataset = PoisonDataset(dataset=kettle.trainset, poison_delta=poison_delta, poison_lookup=kettle.poison_lookup)
+        poison_loader = torch.utils.data.DataLoader(poison_dataset, batch_size=min(kettle.batch_size, len(poison_dataset)),
+                                                        shuffle=True, drop_last=False, num_workers=kettle.num_workers, pin_memory=PIN_MEMORY)
+        
+        print(f'Identifying small clusters at epoch {epoch}...')
+        if args.subset_sampler == 'rand':
+            subset = get_random_subset(B, N)
+        else:
+            subset = get_subset(args, model, poison_loader, B, epoch, N, np.array(range(len(poison_dataset))))
+        
+        keep = np.where(times_selected[subset] == (epoch-1))[0]
+        subset = subset[keep]
+        
+        new_trainset = Subset(kettle.trainset, subset)
+        train_loader = torch.utils.data.DataLoader(new_trainset, batch_size=min(kettle.batch_size, len(new_trainset)),
+                                                        shuffle=True, drop_last=False, num_workers=kettle.num_workers, pin_memory=PIN_MEMORY)
     
     valid_loader = kettle.validloader
     fp_loader = kettle.fploader
@@ -48,6 +89,8 @@ def run_step(kettle, poison_delta, epoch, model, defs, optimizer, scheduler, los
     scaler = torch.cuda.amp.GradScaler()
     
     for batch, (inputs, labels, ids) in enumerate(train_loader):
+        if times_selected != None:
+            times_selected[ids] += 1
         # Prep Mini-Batch
         optimizer.zero_grad(set_to_none=False)
             
@@ -56,9 +99,10 @@ def run_step(kettle, poison_delta, epoch, model, defs, optimizer, scheduler, los
             poison_slices, batch_positions = kettle.lookup_poison_indices(ids)
             if len(batch_positions) > 0:
                 if kettle.args.constrain_perturbation:
-                    inputs[batch_positions] += (poison_delta[poison_slices] * kettle.faces_overlays[poison_slices])
+                    inputs[batch_positions] += (poison_delta[poison_slices] * kettle.faces_overlays[poison_slices])               
                 else:
                     inputs[batch_positions] += poison_delta[poison_slices]
+                    
                 
                 if kettle.args.recipe == 'label-consistent': 
                     kettle.patch_inputs(inputs, batch_positions, poison_slices)
@@ -84,30 +128,22 @@ def run_step(kettle, poison_delta, epoch, model, defs, optimizer, scheduler, los
 
                     inputs = inputs + delta  # Kind of a reparametrization trick
             
-            if NORMALIZE:
-                inputs = normalize(inputs)
-            
-            # Switch into training mode
-            if isinstance(model, torch.nn.DataParallel) or isinstance(model, torch.nn.parallel.DistributedDataParallel):
-                frozen = model.module.frozen
-                list(model.module.children())[-1].train() if frozen else model.train()  
-            else:
-                frozen = model.frozen
-                list(model.children())[-1].train() if frozen else model.train()     
+        if NORMALIZE:
+            inputs = normalize(inputs)  
 
-            # Change loss function to include corrective terms if mixing with correction
-            if activate_defenses and (defs.mixing_method != None and defs.mixing_method['correction']):
-                def criterion(outputs, labels):
-                    return kettle.mixer.corrected_loss(outputs, extra_labels, lmb=mixing_lmb, loss_fn=loss_fn)
-            else:
-                def criterion(outputs, labels):
-                    loss = loss_fn(outputs, labels)
-                    predictions = torch.argmax(outputs.data, dim=1)
-                    correct_preds = (predictions == labels).sum().item()
-                    return loss, correct_preds
+        # Change loss function to include corrective terms if mixing with correction
+        if activate_defenses and (defs.mixing_method != None and defs.mixing_method['correction']):
+            def criterion(outputs, labels):
+                return kettle.mixer.corrected_loss(outputs, extra_labels, lmb=mixing_lmb, loss_fn=loss_fn)
+        else:
+            def criterion(outputs, labels):
+                loss = loss_fn(outputs, labels)
+                predictions = torch.argmax(outputs.data, dim=1)
+                correct_preds = (predictions == labels).sum().item()
+                return loss, correct_preds
 
-            outputs = model(inputs)
-            loss, preds = criterion(outputs, labels)
+        outputs = model(inputs)
+        loss, preds = criterion(outputs, labels)
             
         correct_preds += preds
         epoch_loss += loss.item() * inputs.shape[0]
@@ -165,6 +201,9 @@ def run_step(kettle, poison_delta, epoch, model, defs, optimizer, scheduler, los
             suspicion_rate, false_positive_rate = check_suspicion(model, suspicion_loader, fp_loader, kettle.poison_setup['target_class'], kettle.setup)
         else:
             suspicion_rate, false_positive_rate = None, None
+            
+        if epoch == defs.epochs and stats != None:
+            save_stats(stats, predictions, source_adv_acc, source_clean_acc, suspicion_rate, false_positive_rate)
         
     else:
         predictions, suspicion_rate, false_positive_rate = None, None, None
@@ -175,10 +214,7 @@ def run_step(kettle, poison_delta, epoch, model, defs, optimizer, scheduler, los
     train_loss = epoch_loss / total_preds
     train_acc = correct_preds / total_preds
     
-    if rank != None: 
-        train_loss, train_acc = global_meters_all_avg(kettle.setup['device'], train_loss, train_acc)
-    if rank == 0 or rank == None:
-        print_and_save_stats(epoch, current_lr, train_loss, train_acc, predictions, source_adv_acc, source_adv_loss, source_clean_acc, source_clean_loss, suspicion_rate, false_positive_rate, kettle.args.output)
+    print_and_save_stats(epoch, current_lr, train_loss, train_acc, predictions, source_adv_acc, source_adv_loss, source_clean_acc, source_clean_loss, suspicion_rate, false_positive_rate, output=kettle.args.output)
 
 
 def run_validation(model, criterion, dataloader, target_class, source_class, setup):
@@ -239,16 +275,16 @@ def check_sources(model, criterion, source_testloader, target_class, setup):
                 outputs = model(inputs)
                 _, predictions = torch.max(outputs.data, 1)
                 totals += labels.shape[0]
-            
+                                                                    
                 poison_loss += inputs.shape[0] * criterion(outputs, target_labels)
                 clean_loss += inputs.shape[0] * criterion(outputs, original_labels)
             
                 poison_corrects += (predictions == target_labels).sum()
                 clean_corrects += (predictions == original_labels).sum()
         
-        poison_accs[source_class] = poison_corrects.float() / totals
+        poison_accs[source_class] = poison_corrects.item() / totals
         poison_losses[source_class] = poison_loss / totals
-        clean_accs[source_class] = clean_corrects.float() / totals
+        clean_accs[source_class] = clean_corrects.item() / totals
         clean_losses[source_class] = clean_loss / totals
         
         total_clean_corrects += clean_corrects
@@ -257,9 +293,9 @@ def check_sources(model, criterion, source_testloader, target_class, setup):
         total_clean_loss += clean_loss
         total_sample_size += totals
         
-    poison_accs['avg'] = total_poison_corrects.float() / total_sample_size
+    poison_accs['avg'] = total_poison_corrects.item() / total_sample_size
     poison_losses['avg'] = total_poison_loss / total_sample_size
-    clean_accs['avg'] = total_clean_corrects.float() / total_sample_size
+    clean_accs['avg'] = total_clean_corrects.item() / total_sample_size
     clean_losses['avg'] = total_clean_loss / total_sample_size
         
     return poison_accs, poison_losses, clean_accs, clean_losses

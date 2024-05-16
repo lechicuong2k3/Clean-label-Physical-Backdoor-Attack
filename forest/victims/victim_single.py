@@ -58,7 +58,7 @@ class _VictimSingle(_VictimBase):
 
             # We construct a full replacement model, so that the seed matches up with the initial seed,
             # even if all of the model except for the last layer will be immediately discarded.
-            replacement_model = get_model(self.args.net[0], pretrained=True)
+            replacement_model = get_model(self.args.net[0], num_classes=self.num_classes, pretrained=True)
             
             if isinstance(self.model, torch.nn.DataParallel) or isinstance(self.model, torch.nn.parallel.DistributedDataParallel):
                 frozen = self.model.module.frozen
@@ -83,21 +83,26 @@ class _VictimSingle(_VictimBase):
         write(repr(self.defs), self.args.output)
 
     def save_feature_representation(self):
-        self.clean_model = copy.deepcopy(self.model)
+        self.orginal_model = copy.deepcopy(self.model)
 
     def load_feature_representation(self):
-        self.model = copy.deepcopy(self.clean_model)
+        self.model = copy.deepcopy(self.orginal_model)
 
     """ METHODS FOR (CLEAN) TRAINING AND TESTING OF BREWED POISONS"""
-    def _iterate(self, kettle, poison_delta, max_epoch=None):
+    def _iterate(self, kettle, poison_delta, max_epoch=None, stats=None):
         """Validate a given poison by training the model and checking source accuracy."""
         if max_epoch is None:
             max_epoch = self.defs.epochs
 
+        if self.args.defense != None and 'EPIC' in self.args.defense:
+            times_selected = torch.zeros(len(kettle.trainset))
+        else:
+            times_selected = None
+            
         single_setup = (self.model, self.defs, self.optimizer, self.scheduler)
-        self.defs.epochs = max_epoch
+        self.defs.epochs = 1 if self.args.dryrun else max_epoch
         for self.epoch in range(1, max_epoch+1):
-            run_step(kettle, poison_delta, self.epoch, *single_setup)
+            run_step(kettle, poison_delta, self.epoch, *single_setup, stats=stats, times_selected=times_selected)
             if self.args.dryrun:
                 break
 

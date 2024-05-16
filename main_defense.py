@@ -28,7 +28,7 @@ if args.exp_name is None:
     args.exp_name = f'exp_{exp_num}'
 
 if args.defense == '':
-    args.output = f'defense_output/{args.exp_name}/{args.recipe}/{args.scenario}/{args.trigger}/{args.net[0].upper()}/{args.poisonkey}_{args.scenario}_{args.trigger}_{args.alpha}_{args.beta}_{args.attackoptim}_{args.attackiter}.txt'
+    args.output = f'defense_output/{args.exp_name}/{args.recipe}/{args.scenario}/{args.trigger}/{args.net[0].upper()}/{args.poisonkey}_{args.scenario}_{args.trigger}_{args.alpha}_{args.beta}_{args.eps}_{args.attackoptim}_{args.attackiter}.txt'
 else:
     args.output = f'defense_output/{args.exp_name}/{args.defense}/{args.recipe}/{args.scenario}/{args.trigger}/{args.net[0].upper()}/{args.poisonkey}_{args.scenario}_{args.trigger}_{args.alpha}_{args.beta}_{args.attackoptim}_{args.attackiter}.txt'
 
@@ -76,66 +76,59 @@ if __name__ == "__main__":
     craft_time = time.time()
     print("Craft time: ", str(datetime.timedelta(seconds=craft_time - train_time)))
     
-    # Optional: apply a filtering defense
-    if args.defense != '' and args.defense != 'neural_cleanse':
-        if args.recipe != 'naive':
-            write('Attempting to filter poison images...', args.output)
-            defense = get_defense(args)
-            clean_ids = defense(data, model, poison_delta, args)
-            poison_ids = set(range(len(data.trainset))) - set(clean_ids)
-            removed_images = len(data.trainset) - len(clean_ids)
-            removed_poisons = len(set(data.poison_target_ids+data.triggerset_class_ids) & poison_ids)
-            removed_cleans = removed_images - removed_poisons
-            elimination_rate = removed_poisons/(len(data.poison_target_ids) + len(data.triggerset_class_ids))*100
-            sacrifice_rate = removed_cleans/(len(data.trainset)-len(data.poison_target_ids)-len(data.triggerset_class_ids))*100
-        else:
-            write('Attempting to filter poison images...', args.output)
-            defense = get_defense(args)
-            clean_ids = defense(data, model, poison_delta, args)
-            poison_ids = set(range(len(data.trainset))) - set(clean_ids)
-            removed_images = len(data.trainset) - len(clean_ids)
-            removed_poisons = len(set(data.triggerset_class_ids) & poison_ids)
-            removed_cleans = removed_images - removed_poisons
-            elimination_rate = removed_poisons/len(data.triggerset_class_ids)*100
-            sacrifice_rate = removed_cleans/(len(data.trainset)-len(data.triggerset_class_ids))*100
-
-        data.reset_trainset(clean_ids)
-        write(f'Filtered {removed_images} images out of {len(data.trainset.dataset)}. {removed_poisons} were poisons.', args.output)
-        write(f'Elimination rate: {elimination_rate}% Sacrifice rate: {sacrifice_rate}%', args.output)
-        filter_stats = dict(removed_poisons=removed_poisons, removed_images_total=removed_images)
-    else:
-        filter_stats = dict()
-  
-    if args.retrain_from_init:
-        model.retrain(data, poison_delta) # Evaluate poison performance on the retrained model
-
-    if args.defense == 'neural_cleanse':
-        pass
-    
-    write('Validating poisoned model...', args.output)
-    # Validation
-    if args.vnet is not None:  # Validate the transfer model given by args.vnet
-        train_net = args.net
-        args.net = args.vnet
-        args.ensemble = len(args.vnet)
-        if args.vruns > 0:
-            model = forest.Victim(args, setup=setup)  # this instantiates a new model with a different architecture
-            model.validate(data, poison_delta, val_max_epoch=args.val_max_epoch)
-        args.net = train_net
-    else:  # Validate the main model
-        if args.vruns > 0:
-            model.validate(data, poison_delta, val_max_epoch=args.val_max_epoch)
-            
+    # Export
+    if args.save_poison is not None and args.recipe != 'naive':
+        data.export_poison(poison_delta, path=args.poison_path, mode=args.save_poison)
+        
+    if args.save_backdoored_model:
+        data.export_backdoored_model(model.model)
+        
+    write('Validation without defense...', args.output)
+    model.validate(data, poison_delta, val_max_epoch=args.val_max_epoch)
     test_time = time.time()
     print("Test time: ", str(datetime.timedelta(seconds=test_time - craft_time)))
-
-    # Export
-    if args.save is not None and args.recipe != 'naive':
-        data.export_poison(poison_delta, path=args.poison_path, mode=args.save)
-
+    model.save_feature_representation()
+    
+    if args.defense == None: 
+        raise ValueError('Defense is not defined')
+    
+    cleansers = args.defense.lower().split(',')
+    for cleanser in cleansers:      
+        write(f'\nCleanser: {cleanser.upper()}', args.output)
+        defense = get_defense(cleanser)
+        clean_ids = defense(data, model, poison_delta, args)
+        poison_ids = set(range(len(data.trainset))) - set(clean_ids)
+        removed_images = len(data.trainset) - len(clean_ids)
+        removed_poisons = len(set(data.poison_target_ids+data.trigger_target_ids) & poison_ids)
+        removed_cleans = removed_images - removed_poisons
+        elimination_rate = removed_poisons/(len(data.poison_target_ids) + len(data.trigger_target_ids))*100
+        sacrifice_rate = removed_cleans/(len(data.trainset)-len(data.poison_target_ids)-len(data.trigger_target_ids))*100
+        
+        # Statistics
+        data.reset_trainset(clean_ids)
+        write(f'Filtered {removed_images} images out of {len(data.trainset.dataset)}. {removed_poisons} were poisons.', args.output)
+        write(f'Elimination Rate: {elimination_rate}% Sacrifice Rate: {sacrifice_rate}%\n', args.output)
+        
+        # Evaluate poison performance on the retrained model
+        if args.retrain_from_init:
+            model.retrain(data, poison_delta) 
+            
+        # Validate
+        if args.vruns > 0:
+            write(f'Validating poisoned model after {cleanser.upper()}', args.output)
+            model.validate(data, poison_delta, val_max_epoch=args.val_max_epoch)
+        
+        # Revert trainset and model to evaluate other defenses
+        data.revert_trainset()
+        model.load_feature_representation()
+    
+    defense_time = time.time()
+    print("Defense time: ", str(datetime.timedelta(seconds=defense_time - test_time)))
+    
     write('\n' + datetime.datetime.now().strftime("%A, %d. %B %Y %I:%M%p"), args.output)
     write('---------------------------------------------------', args.output)
     write(f'Finished computations with train time: {str(datetime.timedelta(seconds=train_time - start_time))}', args.output)
     write(f'Finished computations with craft time: {str(datetime.timedelta(seconds=craft_time - train_time))}', args.output)
     write(f'Finished computations with test time: {str(datetime.timedelta(seconds=test_time - craft_time))}', args.output)
+    write(f'Finished computations with defense time: {str(datetime.timedelta(seconds=defense_time - test_time))}', args.output)
     write('-------------------Job finished.-------------------', args.output)

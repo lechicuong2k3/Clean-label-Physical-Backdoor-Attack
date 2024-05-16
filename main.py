@@ -9,7 +9,7 @@ import time
 import forest
 
 from forest.utils import write, set_random_seed
-from forest.consts import BENCHMARK, NUM_CLASSES
+from forest.consts import BENCHMARK
 torch.backends.cudnn.benchmark = BENCHMARK
 
 # Parse input arguments
@@ -29,11 +29,10 @@ if args.exp_name is None:
     args.exp_name = f'exp_{exp_num}'
 
 args.output = f'outputs/{args.exp_name}/{args.recipe}/{args.trigger}/{args.net[0].upper()}/{args.poisonkey}_{args.trigger}_{args.alpha}_{args.beta}_{args.eps}_{args.attackoptim}_{args.attackiter}.txt'
-
+print(args.output)
 os.makedirs(os.path.dirname(args.output), exist_ok=True)
 open(args.output, 'w').close() # Clear the output files
 
-torch.cuda.empty_cache()
 if args.deterministic:
     forest.utils.set_deterministic()
 
@@ -41,7 +40,8 @@ if __name__ == "__main__":
     
     setup = forest.utils.system_startup(args) # Set up device and torch data type
     
-    model = forest.Victim(args, num_classes=NUM_CLASSES, setup=setup) # Initialize model and loss_fn
+    num_classes = len(os.listdir(os.path.join(args.dataset, args.trigger, 'train')))
+    model = forest.Victim(args, num_classes=num_classes, setup=setup) # Initialize model and loss_fn
     data = forest.Kettle(args, model.defs.batch_size, model.defs.augmentations,
                          model.defs.mixing_method, setup=setup) # Set up trainloader, validloader, poisonloader, poison_ids, trainset/poisonset/source_testset
     witch = forest.Witch(args, setup=setup)
@@ -77,14 +77,19 @@ if __name__ == "__main__":
     if args.retrain_from_init:
         model.retrain(data, poison_delta) # Evaluate poison performance on the retrained model
     
+    # Export
+    if args.save_poison is not None and args.recipe != 'naive':
+        data.export_poison(poison_delta, model, path=args.poison_path, mode=args.save_poison)
+        
     write('Validating poisoned model...', args.output)
+
     # Validation
     if args.vnet is not None:  # Validate the transfer model given by args.vnet
         train_net = args.net
         args.net = args.vnet
         args.ensemble = len(args.vnet)
         if args.vruns > 0:
-            model = forest.Victim(args, setup=setup)  # this instantiates a new model with a different architecture
+            model = forest.Victim(args, num_classes=num_classes, setup=setup)  # this instantiates a new model with a different architecture
             model.validate(data, poison_delta, val_max_epoch=args.val_max_epoch)
         args.net = train_net
     else:  # Validate the main model
@@ -93,10 +98,6 @@ if __name__ == "__main__":
             
     test_time = time.time()
     print("Test time: ", str(datetime.timedelta(seconds=test_time - craft_time)))
-
-    # Export
-    if args.save_poison is not None and args.recipe != 'naive':
-        data.export_poison(poison_delta, path=args.poison_path, mode=args.save_poison)
         
     if args.save_backdoored_model:
         data.export_backdoored_model(model.model)

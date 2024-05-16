@@ -15,5 +15,13 @@ down.py
 dlib
 *.sh
 *.txt
+*.json
 adv_training
-
+GM
+GM+FR
+GM+PR+FR
+HT
+*.JPEG
+*.jpg
+*.zip
+*.jpeg

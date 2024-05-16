@@ -19,10 +19,11 @@ class WitchHTBD(_Witch):
         
         poison_delta = kettle.initialize_poison()
         dataloader = kettle.poisonloader
-        self.args.poison_scheduler = 'linear' # Fix linear scheduler for HTBD
-        self.args.attackoptim = 'PGD'
-        self.args.attackiter = 5000
-        self.tau0 = 0.001
+        # self.args.poison_scheduler = 'linear' # Fix linear scheduler for HTBD
+        # self.args.attackoptim = 'PGD'
+        # self.args.attackiter = 5000
+        # self.tau0 = 0.001
+        # self.args.scheduling = False
 
         validated_batch_size = max(min(kettle.args.pbatch, len(kettle.poisonset)), 1)
 
@@ -39,9 +40,9 @@ class WitchHTBD(_Witch):
                                                                         self.args.attackiter // 1.142], gamma=0.1)
                 elif self.args.poison_scheduler == 'cosine':
                     if self.args.retrain_scenario == None:
-                        T_restart = self.args.attackiter
+                        T_restart = self.args.attackiter+1
                     else:
-                        T_restart = self.args.retrain_iter
+                        T_restart = self.args.retrain_iter+1
                     scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(att_optimizer, T_0=T_restart, eta_min=0.0001)
                 else:
                     raise ValueError('Unknown poison scheduler.')
@@ -95,7 +96,7 @@ class WitchHTBD(_Witch):
                                                             poison_bounds), -dm / ds - poison_bounds)
 
             with torch.no_grad():
-                visual_losses = torch.mean(torch.linalg.norm(poison_delta.view(16,-1), dim=1, ord=2))
+                visual_losses = torch.mean(torch.linalg.matrix_norm(poison_delta))
                 
             source_losses = source_losses / (batch + 1)
             if step % 10 == 0 or step == (self.args.attackiter - 1):
@@ -128,7 +129,6 @@ class WitchHTBD(_Witch):
 
                     victim._iterate(kettle, poison_delta=poison_delta.detach(), max_epoch=self.args.retrain_max_epoch)
                     write('Retraining done!\n', self.args.output)
-                    self._initialize_brew(victim, kettle)
 
         return poison_delta, source_losses
 
