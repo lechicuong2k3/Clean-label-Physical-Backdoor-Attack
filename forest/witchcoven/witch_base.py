@@ -3,6 +3,7 @@
 import torch
 import warnings
 import os
+import random
 import copy
 from ..utils import cw_loss, write, global_meters_all_avg, ModifyTarget, CIELUVColorSpace
 from ..consts import NON_BLOCKING, BENCHMARK, FINETUNING_LR_DROP, NORMALIZE
@@ -125,61 +126,6 @@ class _Witch():
             with torch.no_grad():
                 feats = self.featract(inputs)
                 return (feats - self.target_feature).pow(2).mean()
-
-    def backdoor_finetuning(self, victim, kettle, num_epoch=10, lr=0.0001, mu=0.1):
-        """Finetuning on triggerset of both target class and source class"""
-
-        parameters_except_last_layer = list(victim.model.parameters())[:-1]  
-        original_params = [p.clone().detach().data for p in parameters_except_last_layer]
-        
-        write("\nBegin backdoor finetuning ...", self.args.output)
-
-        source_class = kettle.poison_setup['source_class'][0]
-        target_class = kettle.poison_setup['target_class']
-        
-        # finetune_idcs = kettle.triggerset_dist[target_class] + kettle.triggerset_dist[source_class] 
-        # finetune_idcs = kettle.triggerset_dist[source_class]     
-        finetune_idcs = kettle.triggerset_dist[target_class]
-            
-        dirty_triggerset = copy.deepcopy(kettle.triggerset)
-        # dirty_triggerset.target_transform = v2.Compose([ModifyTarget(target_class)])
-        
-        finetune_set = datasets.Subset(dirty_triggerset, finetune_idcs, transform=copy.deepcopy(data_transforms['train']))
-        finetune_loader = torch.utils.data.DataLoader(finetune_set, batch_size=16, shuffle=True, num_workers=3)
-        
-        loss_fn = torch.nn.CrossEntropyLoss()
-        optimizer = torch.optim.Adam(parameters_except_last_layer, lr=lr)
-        # optimizer = torch.optim.Adam(victim.model.parameters())
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epoch, eta_min=lr*0.01)
-        for epoch in range(num_epoch):
-            total_loss, total_corrects, totals = 0, 0, 0
-            for (data, target, idx) in finetune_loader:
-                optimizer.zero_grad()
-                data, target = data.to(self.setup['device']), target.to(self.setup['device'])
-                output = victim.model(data)
-                
-                predictions = torch.argmax(output.data, dim=1)
-                correct_preds = (predictions == target).sum().item()
-                
-                loss = loss_fn(output, target)
-                for new_param, ori_param in zip(list(victim.model.parameters())[:-1], original_params):
-                    loss += mu * torch.nn.MSELoss()(new_param, ori_param)
-            
-                loss.backward()
-                
-                total_loss += loss.item() * data.shape[0] 
-                total_corrects += correct_preds
-                totals += data.shape[0]
-                
-                optimizer.step()
-                scheduler.step()
-            
-            total_loss /= totals
-            total_corrects /= totals
-            write(f"Epoch {epoch} Loss: {total_loss} | Accuracy: {total_corrects}", self.args.output)
-            if total_loss <= 1e-4: 
-                write("\n", self.args.output)
-                break
             
     def compute_source_gradient(self, victim, kettle):
         """Implement common initialization operations for brewing."""
@@ -190,7 +136,7 @@ class _Witch():
             
             self.sources_train = torch.stack([data[0] for data in kettle.source_trainset], dim=0).to(**self.setup)
             self.true_classes = torch.tensor([data[1] for data in kettle.source_trainset]).to(device=self.setup['device'], dtype=torch.long)
-            self.target_classes = torch.tensor([kettle.poison_setup['poison_class']] * kettle.source_train_num).to(device=self.setup['device'], dtype=torch.long)
+            self.target_classes = torch.tensor([kettle.poison_setup['target_class']] * kettle.source_train_num).to(device=self.setup['device'], dtype=torch.long)
             
             if NORMALIZE:
                 self.sources_train = normalize(self.sources_train)
@@ -199,18 +145,48 @@ class _Witch():
             _sources = self.sources_train
             _true_classes= self.true_classes
             _target_classes = self.target_classes
-                
+            
+            if self.args.repel_loss == True:
+                _repel_samples = []
+                _repel_targets = []
+                num_sample = len(self.sources_train)
+                transform = kettle.validset.transform
+
+                for source in kettle.triggerset_dist:
+                    if source != kettle.poison_setup['source_class'][0] and source != kettle.poison_setup['target_class']:
+                        sample_num = min(len(kettle.triggerset_dist[source]), num_sample)
+                        sample_idcs = random.sample(kettle.triggerset_dist[source], sample_num)
+                        for idx in sample_idcs:
+                            _repel_samples.append(transform(kettle.triggerset[idx][0]))
+                            _repel_targets.append(source)
+
+                _repel_samples = torch.stack(_repel_samples).to(**self.setup)
+                _repel_targets = torch.tensor(_repel_targets).to(device=self.setup['device'], dtype=torch.long)
+
             # Precompute source gradients
-            if self.args.source_criterion in ['cw', 'carlini-wagner']:
-                self.source_grad, self.source_gnorm = victim.gradient(_sources, _target_classes, cw_loss, selection=self.args.source_selection_strategy)
-            elif self.args.source_criterion in ['unsourceed-cross-entropy', 'unxent']:
-                self.source_grad, self.source_gnorm = victim.gradient(_sources, _true_classes, selection=self.args.source_selection_strategy)
-                for grad in self.source_grad:
-                    grad *= -1
-            elif self.args.source_criterion in ['xent', 'cross-entropy']:
-                self.source_grad, self.source_gnorm = victim.gradient(_sources, _target_classes, selection=self.args.source_selection_strategy)
+            if self.args.repel_loss == True:
+                if self.args.source_criterion in ['cw', 'carlini-wagner']:
+                    self.source_grad, self.source_gnorm = victim.gradient_with_repel(_sources, _target_classes, _repel_samples, _repel_targets, cw_loss, selection=self.args.source_selection_strategy)
+                elif self.args.source_criterion in ['unsourceed-cross-entropy', 'unxent']:
+                    self.source_grad, self.source_gnorm = victim.gradient_with_repel(_sources, _true_classes, _repel_samples, _repel_targets, selection=self.args.source_selection_strategy)
+                    for grad in self.source_grad:
+                        grad *= -1
+                elif self.args.source_criterion in ['xent', 'cross-entropy']:
+                    self.source_grad, self.source_gnorm = victim.gradient_with_repel(_sources, _target_classes, _repel_samples, _repel_targets, selection=self.args.source_selection_strategy)
+                else:
+                    raise ValueError('Invalid source criterion chosen ...')
             else:
-                raise ValueError('Invalid source criterion chosen ...')
+                if self.args.source_criterion in ['cw', 'carlini-wagner']:
+                    self.source_grad, self.source_gnorm = victim.gradient(_sources, _target_classes, cw_loss, selection=self.args.source_selection_strategy)
+                elif self.args.source_criterion in ['unsourceed-cross-entropy', 'unxent']:
+                    self.source_grad, self.source_gnorm = victim.gradient(_sources, _true_classes, selection=self.args.source_selection_strategy)
+                    for grad in self.source_grad:
+                        grad *= -1
+                elif self.args.source_criterion in ['xent', 'cross-entropy']:
+                    self.source_grad, self.source_gnorm = victim.gradient(_sources, _target_classes, selection=self.args.source_selection_strategy)
+                else:
+                    raise ValueError('Invalid source criterion chosen ...')
+                
             write(f'Source Grad Norm is {self.source_gnorm}', self.args.output)
 
             if self.args.repel != 0:

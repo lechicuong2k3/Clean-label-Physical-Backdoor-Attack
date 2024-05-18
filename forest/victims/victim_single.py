@@ -2,10 +2,10 @@
 import torch
 import numpy as np
 import warnings
-from math import ceil
-
 import copy
 
+from torch.utils.data import TensorDataset, DataLoader
+from math import ceil
 from .models import get_model
 from .training import get_optimizers, run_step
 from ..hyperparameters import training_strategy
@@ -134,6 +134,124 @@ class _VictimSingle(_VictimBase):
     def reset_learning_rate(self):
         """Reset scheduler object to initial state."""
         _, _, self.optimizer, self.scheduler = self._initialize_model(self.args.net[0], mode=self.args.scenario)
+
+    def gradient_with_repel(self, source_images, source_labels, repel_images, repel_labels, criterion=None, selection=None):
+        """Compute the gradient of criterion(model) w.r.t to given data."""
+        if criterion is None:
+            criterion = self.loss_fn
+        differentiable_params = [p for p in self.model.parameters() if p.requires_grad]
+        
+        # source_dataset = TensorDataset(source_images, source_labels)
+        # source_loader = DataLoader(dataset=source_dataset, batch_size=self.args.source_gradient_batch * 2, num_workers=4, pin_memory=True, shuffle=True)
+        # repel_dataset = TensorDataset(repel_images, repel_labels)
+        # repel_dataloader = DataLoader(dataset=repel_dataset, batch_size=self.args.source_gradient_batch * 2, num_workers=4, pin_memory=True, shuffle=True)
+
+        # source_loss = 0
+        # for inputs, targets in source_loader:
+        #     inputs = inputs.cuda()
+        #     targets = targets.cuda()
+        #     with torch.cuda.amp.autocast():  # Mixed precision
+        #         source_loss += criterion(self.model(inputs), targets)
+
+        # repel_loss = 0
+        # for inputs, targets in repel_dataloader:
+        #     inputs = inputs.cuda()
+        #     targets = targets.cuda()
+        #     with torch.cuda.amp.autocast():  # Mixed precision
+        #         repel_loss += criterion(self.model(inputs), targets)
+
+        # adv_loss = 10 * source_loss - repel_loss
+        # print(source_loss)
+        # print(repel_loss)
+        # print(adv_loss)
+        # gradients = torch.autograd.grad(adv_loss, differentiable_params, only_inputs=True)
+
+        # Select sources with maximum gradient
+        if selection == 'max_gradient':
+            grad_norms = []
+            for image, label in zip(source_images, source_labels):
+                loss = criterion(self.model(image.unsqueeze(0)), label.unsqueeze(0))
+                gradients = torch.autograd.grad(loss, differentiable_params, only_inputs=True)
+                grad_norm = 0
+                for grad in gradients:
+                    grad_norm += grad.detach().pow(2).sum()
+                grad_norms.append(grad_norm.sqrt()) # Append l2_norm of gradient
+            
+            source_poison_selected = ceil(self.args.sources_selection_rate * source_images.shape[0])
+            indices = [i[0] for i in sorted(enumerate(grad_norms), key=lambda x:x[1])][-source_poison_selected:]
+            source_images = source_images[indices]
+            source_labels = source_labels[indices]
+            write('{} sources with maximum gradients selected'.format(source_poison_selected), self.args.output)
+
+        # Using batch processing for batch gradients for source images
+        if self.args.source_gradient_batch != None:
+            batch_size = self.args.source_gradient_batch
+            if source_images.shape[0] < batch_size:
+                batch_size = source_images.shape[0]
+            else:
+                if source_images.shape[0] % batch_size != 0:
+                    batch_size = source_images.shape[0] // ceil(source_images.shape[0] / batch_size)
+                    warnings.warn(f'Batch size changed to {batch_size} to fit source train size')
+
+            source_gradients = None
+            for i in range(source_images.shape[0]//batch_size):
+                loss = batch_size * criterion(self.model(source_images[i*batch_size:(i+1)*batch_size]), source_labels[i*batch_size:(i+1)*batch_size])
+                if i == 0:
+                    source_gradients = torch.autograd.grad(loss, differentiable_params, only_inputs=True)
+                else:
+                    source_gradients = tuple(map(lambda i, j: i + j, source_gradients, torch.autograd.grad(loss, differentiable_params, only_inputs=True)))
+            source_gradients = tuple(map(lambda i: i / (source_images.shape[0] - (source_images.shape[0] % batch_size)), source_gradients))
+
+        else:
+            loss = criterion(self.model(source_images), source_labels)
+            source_gradients = torch.autograd.grad(loss, differentiable_params, only_inputs=True)
+
+        source_grad_norm = sum(grad.detach().pow(2).sum() for grad in source_gradients).sqrt()
+        print("Source gradient norm: ", source_grad_norm)
+
+        permutation = torch.randperm(repel_images.size(0))
+        repel_images = repel_images[permutation]
+        repel_labels = repel_labels[permutation]
+        flipped_labels = torch.tensor([source_labels[0]] * len(repel_images)).cuda()
+
+        # Using batch processing for batch gradients for repel images
+        if self.args.source_gradient_batch != None:
+            batch_size = self.args.source_gradient_batch
+            if repel_images.shape[0] < batch_size:
+                batch_size = repel_images.shape[0]
+            else:
+                if repel_images.shape[0] % batch_size != 0:
+                    batch_size = repel_images.shape[0] // ceil(repel_images.shape[0] / batch_size)
+                    warnings.warn(f'Batch size changed to {batch_size} to fit repel train size')
+
+            repel_gradients = None
+            for i in range(repel_images.shape[0]//batch_size):
+                correct_loss = criterion(self.model(repel_images[i*batch_size:(i+1)*batch_size]), repel_labels[i*batch_size:(i+1)*batch_size])
+                incorrect_loss = criterion(self.model(repel_images[i*batch_size:(i+1)*batch_size]), flipped_labels[i*batch_size:(i+1)*batch_size])
+                loss = batch_size * (correct_loss - incorrect_loss)
+                if i == 0:
+                    repel_gradients = torch.autograd.grad(loss, differentiable_params, only_inputs=True)
+                else:
+                    repel_gradients = tuple(map(lambda i, j: i + j, repel_gradients, torch.autograd.grad(loss, differentiable_params, only_inputs=True)))
+            repel_gradients = tuple(map(lambda i: i / (repel_images.shape[0] - (repel_images.shape[0] % batch_size)), repel_gradients))
+
+        else:
+            correct_loss = criterion(self.model(repel_images), repel_labels)
+            incorrect_loss = criterion(self.model(repel_images), flipped_labels)
+            loss = correct_loss - incorrect_loss
+            repel_gradients = torch.autograd.grad(loss, differentiable_params, only_inputs=True)
+
+        repel_grad_norm = sum(grad.detach().pow(2).sum() for grad in repel_gradients).sqrt()
+        print("Repel gradient norm: ", repel_grad_norm)
+
+        gradients = tuple(map(lambda s, r: (s + r), source_gradients, repel_gradients))
+    
+        grad_norm = 0
+        for grad in gradients:
+            grad_norm += grad.detach().pow(2).sum()
+        grad_norm = grad_norm.sqrt()
+    
+        return gradients, grad_norm
 
     def gradient(self, images, labels, criterion=None, selection=None):
         """Compute the gradient of criterion(model) w.r.t to given data."""

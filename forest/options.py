@@ -87,6 +87,9 @@ def options():
     # Gradient Matching - Specific Options
     parser.add_argument('--loss', default='similarity', type=str)  # similarity is stronger in  difficult situations
 
+    # Setup loss for Adversarial loss
+    parser.add_argument('--repel_loss', default=False, action='store_true', help="Use repel loss to increase stealthiness")
+
     # These are additional regularization terms for gradient matching. We do not use them, but it is possible
     # that scenarios exist in which additional regularization of the poisoned data is useful.
     parser.add_argument('--centreg', default=0, type=float)

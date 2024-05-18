@@ -178,8 +178,8 @@ def total_variation_loss(flows,padding_mode='constant', epsilon=1e-8):
     loss=0
     for shifted_flow in shifted_flows:
         # loss += torch.sum(0.299 * torch.square(flows[:, 0] - shifted_flow[:, 0]) + 0.587 * torch.square(flows[:, 1] - shifted_flow[:, 1]) + 0.114 * torch.square(flows[:, 2] - shifted_flow[:, 2]) + epsilon).cuda()
-        loss += torch.sum(torch.square(flows[:, 1] - shifted_flow[:, 1]) + torch.square(flows[:, 2] - shifted_flow[:, 2]) + epsilon).cuda()
-    return 1/num_pixels * loss.type(torch.float32)
+        loss += torch.mean(torch.square(flows[:, 0] - shifted_flow[:, 0]) + torch.square(flows[:, 1] - shifted_flow[:, 1]) + epsilon).cuda()
+    return loss.type(torch.float32)
 
 def upwind_tv(x):
     # x is a batch of images with shape (batch_size, channels, height, width)
@@ -197,10 +197,8 @@ def upwind_tv(x):
     diff_up = x - x_up
 
     # Compute the TV
-    tv = diff_right**2 + diff_left**2 + diff_down**2 + diff_up**2
+    tv = 10 * (diff_right**2 + diff_left**2 + diff_down**2 + diff_up**2).mean()
 
-    # Sum over all pixels and channels
-    tv = tv.mean() * 4
     return tv
 
 def upwind_tv_channel(x):
@@ -222,6 +220,7 @@ def upwind_tv_channel(x):
     tv = diff_right**2 + diff_left**2 + diff_down**2 + diff_up**2
 
     # Sum over all pixels and channels
+    # tv = (tv[:, 0] * 0.299 + tv[:, 1] * 0.587 + tv[:, 2] * 0.114).mean()
     tv = (tv[:, 0] * 0.299 + tv[:, 1] * 0.587 + tv[:, 2] * 0.114).mean()
     return tv
 

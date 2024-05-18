@@ -792,28 +792,23 @@ class KettleSingle():
         """Set up suspicionset and false positive set"""
         test_transform = copy.deepcopy(self.validset.transform)
         
-        suspicionset = ImageDataset(os.path.join(self.args.dataset, self.args.trigger, 'suspicion', 'merge'))
-        suspicionset_distribution = self.class_distribution(suspicionset)
-        # false_triggers_idcs = []
+        fpset = ImageDataset(os.path.join(self.args.dataset, self.args.trigger, 'suspicion', 'merge'))
+        self.fpset_distribution = self.class_distribution(fpset)
+
         false_target_idcs = []
         false_positive_idcs = []
         for source_class in self.triggerset_dist.keys():
             if source_class != self.target_class:
                 if source_class not in self.source_class:
-                    # false_trigger_idcs.extend(suspicionset_distribution[source_class])
                     false_target_idcs.extend(self.triggerset_dist[source_class])
                 else:
-                    false_positive_idcs.extend(suspicionset_distribution[source_class])
-                
-        # suspicionset_1 = Subset(self.triggerset, false_target_idcs)
-        # suspicionset_2 = Subset(suspicionset, false_trigger_idcs)
+                    false_positive_idcs.extend(self.fpset_distribution[source_class])
         
-        fpset = Subset(suspicionset, false_positive_idcs, transform=test_transform)
-        # suspicionset = ConcatDataset([suspicionset_1, suspicionset_2], transform=test_transform) # Overwrite suspicionset
-        suspicionset = Subset(suspicionset, false_target_idcs, transform=test_transform) # Overwrite suspicionset
+        self.fpset = Subset(fpset, false_positive_idcs, transform=test_transform)
+        self.suspicionset = Subset(self.triggerset, false_target_idcs, transform=test_transform) 
         
-        self.suspicionloader = torch.utils.data.DataLoader(suspicionset, batch_size=128, shuffle=False, num_workers=self.num_workers)
-        self.fploader = torch.utils.data.DataLoader(fpset, batch_size=128, shuffle=False, num_workers=self.num_workers)
+        self.suspicionloader = torch.utils.data.DataLoader(self.suspicionset, batch_size=128, shuffle=False, num_workers=self.num_workers)
+        self.fploader = torch.utils.data.DataLoader(self.fpset, batch_size=128, shuffle=False, num_workers=self.num_workers)
         
     def setup_poisons(self):
         """
